@@ -406,4 +406,14 @@ int acl_set_default_role(THD *thd, const char *host, const char *user,
 extern ulong role_global_merges, role_db_merges, role_table_merges,
              role_column_merges, role_routine_merges;
 #endif
+/**
+  Specify which statistical information (counts) to retrieve from
+  the ACL data structures.
+*/
+struct ACL_statistics
+{
+  ulong column_grants, database_grants, function_grants, procedure_grants,
+        proxy_users, role_mappings, roles, table_grants, users;
+};
+ACL_statistics get_acl_statistics(THD *thd);
 #endif /* SQL_ACL_INCLUDED */

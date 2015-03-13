@@ -8149,6 +8149,39 @@ int show_threadpool_idle_threads(THD *thd, SHOW_VAR *var, char *buff,
 }
 #endif
 
+int show_acl_statistics(THD *thd, SHOW_VAR *var, char *buff,
+                       enum enum_var_type scope)
+{
+
+  var->type= SHOW_ARRAY;
+  var->value= buff;
+
+  SHOW_VAR *v= (SHOW_VAR *)buff;
+  static ACL_statistics acl_stats;
+  acl_stats= get_acl_statistics(thd);
+  static SHOW_VAR statistics_array[]= {
+    {"column_grants",    (char *)&acl_stats.column_grants,    SHOW_ULONG},
+    {"database_grants",  (char *)&acl_stats.database_grants,  SHOW_ULONG},
+    {"function_grants",  (char *)&acl_stats.function_grants,  SHOW_ULONG},
+    {"procedure_grants", (char *)&acl_stats.procedure_grants, SHOW_ULONG},
+    {"proxy_users",      (char *)&acl_stats.proxy_users,      SHOW_ULONG},
+    {"role_mappings",    (char *)&acl_stats.role_mappings,    SHOW_ULONG},
+    {"roles",            (char *)&acl_stats.roles,            SHOW_ULONG},
+    {"table_grants",     (char *)&acl_stats.table_grants,     SHOW_ULONG},
+    {"users",            (char *)&acl_stats.users,            SHOW_ULONG},
+    {NullS, NullS, SHOW_LONG}
+  };
+  v->name= "count";
+  v->value = statistics_array;
+  v->type= SHOW_ARRAY;
+  v++;
+  v->name= NullS;
+  v->value= NullS;
+  v->type= SHOW_LONG;
+
+  return 0;
+}
+
 /*
   Variables shown by SHOW STATUS in alphabetical order
 */
@@ -8157,6 +8190,7 @@ SHOW_VAR status_vars[]= {
   {"Aborted_clients",          (char*) &aborted_threads,        SHOW_LONG},
   {"Aborted_connects",         (char*) &aborted_connects,       SHOW_LONG},
   {"Access_denied_errors",     (char*) offsetof(STATUS_VAR, access_denied_errors), SHOW_LONG_STATUS},
+  {"Acl",                      (char*) &show_acl_statistics,    SHOW_FUNC},
   {"Binlog_bytes_written",     (char*) offsetof(STATUS_VAR, binlog_bytes_written), SHOW_LONGLONG_STATUS},
   {"Binlog_cache_disk_use",    (char*) &binlog_cache_disk_use,  SHOW_LONG},
   {"Binlog_cache_use",         (char*) &binlog_cache_use,       SHOW_LONG},

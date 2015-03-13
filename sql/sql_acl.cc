@@ -10340,12 +10340,46 @@ applicable_roles_insert(ACL_USER_BASE *grantee, ACL_ROLE *role, void *ptr)
   return 0;
 }
 
+static my_bool count_column_privileges(void *grant_table,
+                                       void *current_count)
+{
+  HASH hash_columns = ((GRANT_TABLE *)grant_table)->hash_columns;
+  *(ulong *) current_count+= hash_columns.records;
+  return 0;
+}
+
 #else
 bool check_grant(THD *, ulong, TABLE_LIST *, bool, uint, bool)
 {
   return 0;
 }
 #endif /*NO_EMBEDDED_ACCESS_CHECKS */
+
+ACL_statistics get_acl_statistics(THD* thd)
+{
+  ACL_statistics result;
+  bzero(&result, sizeof(result));
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+  mysql_rwlock_rdlock(&LOCK_grant);
+  mysql_mutex_lock(&acl_cache->lock);
+
+  result.users= acl_users.elements;
+  result.roles= acl_roles.records;
+  result.database_grants= acl_dbs.elements;
+  result.function_grants= proc_priv_hash.records;
+  result.procedure_grants= proc_priv_hash.records;
+  result.proxy_users= acl_proxy_users.elements;
+  result.role_mappings= acl_roles_mappings.records;
+  result.table_grants= column_priv_hash.records;
+  my_hash_iterate(&column_priv_hash, count_column_privileges,
+                  &result.column_grants);
+
+  mysql_mutex_unlock(&acl_cache->lock);
+  mysql_rwlock_unlock(&LOCK_grant);
+
+#endif
+  return result;
+}
 
 int fill_schema_enabled_roles(THD *thd, TABLE_LIST *tables, COND *cond)
 {
