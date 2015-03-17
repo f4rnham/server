@@ -749,7 +749,7 @@ extern ulong extra_max_connections;
 extern ulonglong denied_connections;
 extern ulong thread_created;
 extern scheduler_functions *thread_scheduler, *extra_thread_scheduler;
-extern char *opt_log_basename;
+extern char *opt_log_basename, *opt_fake_version;
 extern my_bool opt_master_verify_checksum;
 extern my_bool opt_stack_trace;
 extern my_bool opt_expect_abort;

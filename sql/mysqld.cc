@@ -605,7 +605,8 @@ time_t server_start_time, flush_status_time;
 
 char mysql_home[FN_REFLEN], pidfile_name[FN_REFLEN], system_time_zone[30];
 char *default_tz_name;
-char log_error_file[FN_REFLEN], glob_hostname[FN_REFLEN], *opt_log_basename;
+char log_error_file[FN_REFLEN], glob_hostname[FN_REFLEN], *opt_log_basename,
+     *opt_fake_version;
 char mysql_real_data_home[FN_REFLEN],
      lc_messages_dir[FN_REFLEN], reg_ext[FN_EXTLEN],
      mysql_charsets_dir[FN_REFLEN],
@@ -7433,6 +7434,10 @@ struct my_option my_long_options[]=
    "start.", &wsrep_new_cluster, &wsrep_new_cluster, 0, GET_BOOL, NO_ARG,
    0, 0, 0, 0, 0, 0},
 #endif
+  {"fake_version", 0,
+   "Way to override 'version' system variable with custom string",
+   &opt_fake_version, &opt_fake_version, 0, GET_STR, REQUIRED_ARG,
+   0, 0, 0, 0, 0, 0},
 
   /* The following options exist in 5.6 but not in 10.0 */
   MYSQL_TO_BE_IMPLEMENTED_OPTION("default-tmp-storage-engine"),
@@ -8489,6 +8494,7 @@ static int mysql_init_variables(void)
   opt_ignore_builtin_innodb= 0;
   opt_logname= opt_binlog_index_name= opt_slow_logname= 0;
   opt_log_basename= 0;
+  opt_fake_version= 0;
   opt_tc_log_file= (char *)"tc.log";      // no hostname in tc_log file name !
   opt_secure_auth= 0;
   opt_bootstrap= opt_myisam_log= 0;
@@ -9422,7 +9428,11 @@ static int get_options(int *argc_ptr, char ***argv_ptr)
 
 void set_server_version(void)
 {
-  char *end= strxmov(server_version, MYSQL_SERVER_VERSION,
+  char *versionString = MYSQL_SERVER_VERSION;
+  if (opt_fake_version && *opt_fake_version)
+    versionString = opt_fake_version;
+
+  char *end= strxmov(server_version, versionString,
                      MYSQL_SERVER_SUFFIX_STR, NullS);
 #ifdef EMBEDDED_LIBRARY
   end= strmov(end, "-embedded");
