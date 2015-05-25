@@ -3863,6 +3863,7 @@ SHOW_VAR com_status_vars[]= {
   {"stmt_send_long_data",  COM_STATUS(com_stmt_send_long_data)},
   {"stop_all_slaves",      STMT_STATUS(SQLCOM_SLAVE_ALL_STOP)},
   {"stop_slave",           STMT_STATUS(SQLCOM_SLAVE_STOP)},
+  {"sync_slave",           STMT_STATUS(SQLCOM_SLAVE_SYNC)},
   {"truncate",             STMT_STATUS(SQLCOM_TRUNCATE)},
   {"uninstall_plugin",     STMT_STATUS(SQLCOM_UNINSTALL_PLUGIN)},
   {"unlock_tables",        STMT_STATUS(SQLCOM_UNLOCK_TABLES)},

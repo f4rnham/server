@@ -3556,6 +3556,12 @@ end_with_restore_list:
     mysql_mutex_unlock(&LOCK_active_mi);
     break;
   }
+  case SQLCOM_SLAVE_SYNC:
+  {
+    sql_print_information("---------> SLAVE SYNC <----------------");
+    my_ok(thd);
+    break;
+  }
 #endif /* HAVE_REPLICATION */
   case SQLCOM_RENAME_TABLE:
   {

@@ -7846,6 +7846,12 @@ slave:
             lex->type = 0;
             /* If you change this code don't forget to update SLAVE STOP too */
           }
+        | LOAD DATA_SYM FROM MASTER_SYM
+          {
+            LEX *lex= Lex;
+            lex->sql_command= SQLCOM_SLAVE_SYNC;
+            lex->type= 0;
+          }
         ;
 
 start:
