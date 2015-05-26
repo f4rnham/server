@@ -141,16 +141,13 @@ failed read"
   }
 };
  
-
-typedef enum { SLAVE_THD_IO, SLAVE_THD_SQL} SLAVE_THD_TYPE;
-
 static int process_io_rotate(Master_info* mi, Rotate_log_event* rev);
 static int process_io_create_file(Master_info* mi, Create_file_log_event* cev);
 static bool wait_for_relay_log_space(Relay_log_info* rli);
 static bool io_slave_killed(Master_info* mi);
 static bool sql_slave_killed(rpl_group_info *rgi);
 static int init_slave_thread(THD* thd, Master_info *mi,
-                             SLAVE_THD_TYPE thd_type);
+                             enum_thread_type thd_type);
 static void print_slave_skip_errors(void);
 static int safe_connect(THD* thd, MYSQL* mysql, Master_info* mi);
 static int safe_reconnect(THD* thd, MYSQL* mysql, Master_info* mi,
@@ -221,16 +218,20 @@ static void set_slave_max_allowed_packet(THD *thd, MYSQL *mysql)
 
 void init_thread_mask(int* mask,Master_info* mi,bool inverse)
 {
-  bool set_io = mi->slave_running, set_sql = mi->rli.slave_running;
-  register int tmp_mask=0;
+  bool set_io_repl= mi->slave_running, set_sql= mi->rli.slave_running,
+    // FIXME - Farnham own variable?
+    set_io_provisioning= mi->slave_running;
+  register int tmp_mask= 0;
   DBUG_ENTER("init_thread_mask");
 
-  if (set_io)
-    tmp_mask |= SLAVE_IO;
+  if (set_io_repl)
+    tmp_mask|= SLAVE_IO_REPLICATION;
   if (set_sql)
-    tmp_mask |= SLAVE_SQL;
+    tmp_mask|= SLAVE_SQL;
+  if (set_io_provisioning)
+    tmp_mask|= SLAVE_IO_PROVISIONING;
   if (inverse)
-    tmp_mask^= (SLAVE_IO | SLAVE_SQL);
+    tmp_mask^= (SLAVE_IO_REPLICATION | SLAVE_SQL | SLAVE_IO_PROVISIONING);
   *mask = tmp_mask;
   DBUG_VOID_RETURN;
 }
@@ -266,12 +267,14 @@ void unlock_slave_threads(Master_info* mi)
 }
 
 #ifdef HAVE_PSI_INTERFACE
-static PSI_thread_key key_thread_slave_io, key_thread_slave_sql;
+static PSI_thread_key key_thread_slave_io_replication, key_thread_slave_sql,
+  key_thread_slave_io_provisioning;
 
 static PSI_thread_info all_slave_threads[]=
 {
-  { &key_thread_slave_io, "slave_io", PSI_FLAG_GLOBAL},
-  { &key_thread_slave_sql, "slave_sql", PSI_FLAG_GLOBAL}
+  { &key_thread_slave_io_replication, "slave_io_replication", PSI_FLAG_GLOBAL},
+  { &key_thread_slave_sql, "slave_sql", PSI_FLAG_GLOBAL},
+  { &key_thread_slave_io_provisioning, "slave_io_provisioning", PSI_FLAG_GLOBAL},
 };
 
 static void init_slave_psi_keys(void)
@@ -424,7 +427,7 @@ int init_slave()
   */
 
   if (init_master_info(active_mi,master_info_file,relay_log_info_file,
-                       1, (SLAVE_IO | SLAVE_SQL)))
+                       1, (SLAVE_IO_REPLICATION | SLAVE_SQL)))
   {
     sql_print_error("Failed to initialize the master info structure");
     goto err;
@@ -439,7 +442,7 @@ int init_slave()
                             active_mi,
                             master_info_file,
                             relay_log_info_file,
-                            SLAVE_IO | SLAVE_SQL))
+                            SLAVE_IO_REPLICATION | SLAVE_SQL))
     {
       sql_print_error("Failed to create slave threads");
       goto err;
@@ -657,7 +660,7 @@ int terminate_slave_threads(Master_info* mi,int thread_mask,bool skip_lock)
         !master_info_index->any_slave_sql_running())
       rpl_parallel_inactivate_pool(&global_rpl_thread_pool);
   }
-  if (thread_mask & (SLAVE_IO|SLAVE_FORCE_ALL))
+  if (thread_mask & (SLAVE_IO_REPLICATION|SLAVE_FORCE_ALL))
   {
     DBUG_PRINT("info",("Terminating IO thread"));
     mi->abort_slave=1;
@@ -951,12 +954,12 @@ int start_slave_threads(bool need_slave_mutex, bool wait_for_start,
     mi->rli.restart_gtid_pos.reset();
   }
 
-  if (!error && (thread_mask & SLAVE_IO))
+  if (!error && (thread_mask & SLAVE_IO_REPLICATION))
     error= start_slave_thread(
 #ifdef HAVE_PSI_INTERFACE
-                              key_thread_slave_io,
+                              key_thread_slave_io_replication,
 #endif
-                              handle_slave_io, lock_io, lock_cond_io,
+                              handle_slave_io_replication, lock_io, lock_cond_io,
                               cond_io,
                               &mi->slave_running, &mi->slave_run_id,
                               mi);
@@ -974,11 +977,72 @@ int start_slave_threads(bool need_slave_mutex, bool wait_for_start,
                               &mi->rli.slave_running, &mi->rli.slave_run_id,
                               mi);
     if (error)
-      terminate_slave_threads(mi, thread_mask & SLAVE_IO, !need_slave_mutex);
+      terminate_slave_threads(mi, thread_mask & SLAVE_IO_REPLICATION, !need_slave_mutex);
   }
   DBUG_RETURN(error);
 }
 
+/**
+  Starts threads responsible for copying data from master to slave,
+  triggered by LOAD DATA FROM MASTER command
+
+  FIXME - Farnham Are there cases, when SLAVE_IO_REPLICATION | SLAVE_SQL
+  is already running? + wait and mutexes
+ */
+
+int start_slave_provisioning_threads(bool need_slave_mutex, bool wait_for_start,
+                            Master_info* mi, int thread_mask)
+{
+  mysql_mutex_t *lock_io=0, *lock_sql=0, *lock_cond_io=0, *lock_cond_sql=0;
+  mysql_cond_t* cond_io=0, *cond_sql=0;
+  int error=0;
+  const char *errmsg;
+  DBUG_ENTER("start_slave_provisioning_threads");
+
+  if (need_slave_mutex)
+  {
+    lock_io = &mi->run_lock;
+    lock_sql = &mi->rli.run_lock;
+  }
+  if (wait_for_start)
+  {
+    cond_io = &mi->start_cond;
+    cond_sql = &mi->rli.start_cond;
+    lock_cond_io = &mi->run_lock;
+    lock_cond_sql = &mi->rli.run_lock;
+  }
+
+  if (!error && (thread_mask & SLAVE_IO_PROVISIONING))
+    error= start_slave_thread(
+#ifdef HAVE_PSI_INTERFACE
+                              key_thread_slave_io_provisioning,
+#endif
+                              handle_slave_io_provisioning, lock_io,
+                              lock_cond_io, cond_io, &mi->slave_running,
+                              &mi->slave_run_id, mi);
+
+  // Uses same SQL thread as if regular replication was running
+  // FIXME - Farnham thread needs to know, that duplicate / not found
+  // row errors are ok
+  if (!error && (thread_mask & SLAVE_SQL))
+  {
+    if (opt_slave_parallel_threads > 0)
+      error= rpl_parallel_activate_pool(&global_rpl_thread_pool);
+
+    if (!error)
+      error= start_slave_thread(
+#ifdef HAVE_PSI_INTERFACE
+                              key_thread_slave_sql,
+#endif
+                              handle_slave_sql, lock_sql, lock_cond_sql,
+                              cond_sql,
+                              &mi->rli.slave_running, &mi->rli.slave_run_id,
+                              mi);
+    if (error)
+      terminate_slave_threads(mi, thread_mask & SLAVE_IO_REPLICATION, !need_slave_mutex);
+  }
+  DBUG_RETURN(error);
+}
 
 /*
   Release slave threads at time of executing shutdown.
@@ -2950,25 +3014,24 @@ void set_slave_thread_default_charset(THD* thd, rpl_group_info *rgi)
 */
 
 static int init_slave_thread(THD* thd, Master_info *mi,
-                             SLAVE_THD_TYPE thd_type)
+                             enum_thread_type thd_type)
 {
   DBUG_ENTER("init_slave_thread");
   int simulate_error __attribute__((unused))= 0;
   DBUG_EXECUTE_IF("simulate_io_slave_error_on_init",
-                  simulate_error|= (1 << SLAVE_THD_IO););
+                  simulate_error|= thd_type;);
   DBUG_EXECUTE_IF("simulate_sql_slave_error_on_init",
-                  simulate_error|= (1 << SLAVE_THD_SQL););
+                  simulate_error|= thd_type;);
   /* We must call store_globals() before doing my_net_init() */
   if (init_thr_lock() || thd->store_globals() ||
       my_net_init(&thd->net, 0, MYF(MY_THREAD_SPECIFIC)) ||
-      IF_DBUG(simulate_error & (1<< thd_type), 0))
+      IF_DBUG(simulate_error & thd_type, 0))
   {
     thd->cleanup();
     DBUG_RETURN(-1);
   }
 
-  thd->system_thread = (thd_type == SLAVE_THD_SQL) ?
-    SYSTEM_THREAD_SLAVE_SQL : SYSTEM_THREAD_SLAVE_IO;
+  thd->system_thread = thd_type;
   thd->security_ctx->skip_grants();
   thd->slave_thread= 1;
   thd->connection_name= mi->connection_name;
@@ -2980,10 +3043,13 @@ static int init_slave_thread(THD* thd, Master_info *mi,
   thd->thread_id= thd->variables.pseudo_thread_id= thread_id++;
   mysql_mutex_unlock(&LOCK_thread_count);
 
-  if (thd_type == SLAVE_THD_SQL)
+  if (thd_type == SYSTEM_THREAD_SLAVE_SQL)
     THD_STAGE_INFO(thd, stage_waiting_for_the_next_event_in_relay_log);
-  else
+  else if (thd_type == SYSTEM_THREAD_SLAVE_IO_REPLICATION)
     THD_STAGE_INFO(thd, stage_waiting_for_master_update);
+  // else FIXME - Farnham stages for provisioning 
+  // SYSTEM_THREAD_SLAVE_IO_PROVISIONING
+
   thd->set_time();
   /* Do not use user-supplied timeout value for system threads. */
   thd->variables.lock_wait_timeout= LONG_TIMEOUT;
@@ -3776,14 +3842,14 @@ static int try_to_reconnect(THD *thd, MYSQL *mysql, Master_info *mi,
 
 
 /**
-  Slave IO thread entry point.
+  Slave replication IO thread entry point.
 
   @param arg Pointer to Master_info struct that holds information for
   the IO thread.
 
   @return Always 0.
 */
-pthread_handler_t handle_slave_io(void *arg)
+pthread_handler_t handle_slave_io_replication(void *arg)
 {
   THD *thd; // needs to be first for thread_stack
   MYSQL *mysql;
@@ -3800,7 +3866,7 @@ pthread_handler_t handle_slave_io(void *arg)
 #endif
   // needs to call my_thread_init(), otherwise we get a coredump in DBUG_ stuff
   my_thread_init();
-  DBUG_ENTER("handle_slave_io");
+  DBUG_ENTER("handle_slave_io_replication");
 
   DBUG_ASSERT(mi->inited);
   mysql= NULL ;
@@ -3822,7 +3888,7 @@ pthread_handler_t handle_slave_io(void *arg)
   pthread_detach_this_thread();
   thd->thread_stack= (char*) &thd; // remember where our stack is
   mi->clear_error();
-  if (init_slave_thread(thd, mi, SLAVE_THD_IO))
+  if (init_slave_thread(thd, mi, SYSTEM_THREAD_SLAVE_IO_REPLICATION))
   {
     mysql_cond_broadcast(&mi->start_cond);
     sql_print_error("Failed during slave I/O thread initialization");
@@ -4222,6 +4288,111 @@ err_during_init:
   return 0;                                     // Avoid compiler warnings
 }
 
+/**
+  Slave provisioning IO thread entry point.
+
+  @param arg Pointer to Master_info struct that holds information for
+  the IO thread.
+
+  @return Always 0.
+*/
+pthread_handler_t handle_slave_io_provisioning(void *arg)
+{
+  THD *thd; // needs to be first for thread_stack
+  MYSQL *mysql;
+  Master_info *mi = (Master_info*)arg;
+  Relay_log_info *rli= &mi->rli;
+  char llbuff[22];
+  uint retry_count;
+  bool suppress_warnings;
+  int ret;
+  rpl_io_thread_info io_info;
+#ifndef DBUG_OFF
+  uint retry_count_reg= 0, retry_count_dump= 0, retry_count_event= 0;
+  mi->dbug_do_disconnect= false;
+#endif
+  // needs to call my_thread_init(), otherwise we get a coredump in DBUG_ stuff
+  my_thread_init();
+  DBUG_ENTER("handle_slave_io_provisioning");
+
+  DBUG_ASSERT(mi->inited);
+  mysql= NULL ;
+  retry_count= 0;
+
+  thd= new THD; // note that constructor of THD uses DBUG_ !
+
+  mysql_mutex_lock(&mi->run_lock);
+  /* Inform waiting threads that slave has started */
+  mi->slave_run_id++;
+
+#ifndef DBUG_OFF
+  mi->events_till_disconnect = disconnect_slave_event_count;
+#endif
+
+  THD_CHECK_SENTRY(thd);
+  mi->io_thd = thd;
+
+  pthread_detach_this_thread();
+  thd->thread_stack= (char*) &thd; // remember where our stack is
+  mi->clear_error();
+  if (init_slave_thread(thd, mi, SYSTEM_THREAD_SLAVE_IO_PROVISIONING))
+  {
+    mysql_cond_broadcast(&mi->start_cond);
+    sql_print_error("Failed during slave I/O thread initialization");
+    goto err_during_init;
+  }
+  thd->system_thread_info.rpl_io_info= &io_info;
+  mysql_mutex_lock(&LOCK_thread_count);
+  threads.append(thd);
+  mysql_mutex_unlock(&LOCK_thread_count);
+  mi->slave_running = MYSQL_SLAVE_RUN_NOT_CONNECT;
+  mi->abort_slave = 0;
+  mysql_mutex_unlock(&mi->run_lock);
+  mysql_cond_broadcast(&mi->start_cond);
+
+  DBUG_PRINT("master_info",("log_file_name: '%s'  position: %s",
+                            mi->master_log_name,
+                            llstr(mi->master_log_pos,llbuff)));
+
+  /* This must be called before run any binlog_relay_io hooks */
+  my_pthread_setspecific_ptr(RPL_MASTER_INFO, mi);
+
+  /* FIXME - Farnham hooks, what are they used for?
+  if (RUN_HOOK(binlog_relay_io, thread_start, (thd, mi)))
+  {
+    mi->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, NULL,
+               ER(ER_SLAVE_FATAL_ERROR), "Failed to run 'thread_start' hook");
+    goto err;
+  }*/
+
+  if (!(mi->mysql = mysql = mysql_init(NULL)))
+  {
+    mi->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, NULL,
+               ER(ER_SLAVE_FATAL_ERROR), "error in mysql_init()");
+    goto err;
+  }
+
+  // FIXME - Farnham stages
+  THD_STAGE_INFO(thd, stage_connecting_to_master);
+
+  // We can get killed during safe_connect
+  if (!safe_connect(thd, mysql, mi))
+  {
+      sql_print_information("Slave provisioning I/O thread: "
+                            "connected to master '%s@%s:%d'",
+                            mi->user, mi->host, mi->port);
+  }
+  else
+  {
+    sql_print_information("Slave provisioning I/O thread killed while "
+                          "connecting to master");
+    goto err;
+  }
+
+
+  // ... 
+}
+
 /*
   Check the temporary directory used by commands like
   LOAD DATA INFILE.
@@ -4439,7 +4610,7 @@ pthread_handler_t handle_slave_sql(void *arg)
   rli->slave_running= MYSQL_SLAVE_RUN_NOT_CONNECT;
 
   pthread_detach_this_thread();
-  if (init_slave_thread(thd, mi, SLAVE_THD_SQL))
+  if (init_slave_thread(thd, mi, SYSTEM_THREAD_SLAVE_SQL))
   {
     /*
       TODO: this is currently broken - slave start and change master
@@ -5990,7 +6161,7 @@ err:
 
   /*
     Do not print ER_SLAVE_RELAY_LOG_WRITE_FAILURE error here, as the caller
-    handle_slave_io() prints it on return.
+    handle_slave_io_{ replication | provisioning }() prints it on return.
   */
   if (error && error != ER_SLAVE_RELAY_LOG_WRITE_FAILURE)
     mi->report(ERROR_LEVEL, error, NULL, ER(error),

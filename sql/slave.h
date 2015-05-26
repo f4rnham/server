@@ -177,6 +177,8 @@ int terminate_slave_threads(Master_info* mi, int thread_mask,
 int start_slave_threads(bool need_slave_mutex, bool wait_for_start,
 			Master_info* mi, const char* master_info_fname,
 			const char* slave_info_fname, int thread_mask);
+int start_slave_provisioning_threads(bool need_slave_mutex, bool wait_for_start,
+                            Master_info* mi, int thread_mask);
 /*
   cond_lock is usually same as start_lock. It is needed for the case when
   start_lock is 0 which happens if start_slave_thread() is called already
@@ -239,7 +241,8 @@ int apply_event_and_update_pos(Log_event* ev, THD* thd,
                                struct rpl_group_info *rgi,
                                rpl_parallel_thread *rpt);
 
-pthread_handler_t handle_slave_io(void *arg);
+pthread_handler_t handle_slave_io_replication(void *arg);
+pthread_handler_t handle_slave_io_provisioning(void *arg);
 void slave_output_error_info(rpl_group_info *rgi, THD *thd);
 pthread_handler_t handle_slave_sql(void *arg);
 bool net_request_file(NET* net, const char* fname);
@@ -264,9 +267,13 @@ extern I_List<THD> threads;
 #define close_active_mi() /* no-op */
 #endif /* HAVE_REPLICATION */
 
-/* masks for start/stop operations on io and sql slave threads */
-#define SLAVE_IO  1
-#define SLAVE_SQL 2
+/*
+  Masks for start/stop operations on io (replication and provisioning) and sql
+  slave threads
+*/
+#define SLAVE_IO_REPLICATION  1
+#define SLAVE_SQL             2
+#define SLAVE_IO_PROVISIONING 4
 
 /**
   @} (end of group Replication)

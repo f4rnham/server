@@ -1680,14 +1680,14 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       thd->enable_slow_log&= opt_log_slow_admin_statements;
       thd->query_plan_flags|= QPLAN_ADMIN;
       if (check_global_access(thd, REPL_SLAVE_ACL))
-	break;
+        break;
 
       /* TODO: The following has to be changed to an 8 byte integer */
       pos = uint4korr(packet);
       flags = uint2korr(packet + 4);
       thd->variables.server_id=0; /* avoid suicide */
       if ((slave_server_id= uint4korr(packet+6))) // mysqlbinlog.server_id==0
-	kill_zombie_dump_threads(slave_server_id);
+        kill_zombie_dump_threads(slave_server_id);
       thd->variables.server_id = slave_server_id;
 
       general_log_print(thd, command, "Log: '%s'  Pos: %ld", packet+10,
@@ -3558,8 +3558,32 @@ end_with_restore_list:
   }
   case SQLCOM_SLAVE_SYNC:
   {
-    sql_print_information("---------> SLAVE SYNC <----------------");
-    my_ok(thd);
+    LEX_MASTER_INFO* lex_mi= &thd->lex->mi;
+    Master_info *mi;
+
+    mysql_mutex_lock(&LOCK_active_mi);
+
+    mi= master_info_index->get_master_info(&lex_mi->connection_name,
+                                           Sql_condition::WARN_LEVEL_ERROR);
+
+    if (!mi)
+    {
+      mysql_mutex_unlock(&LOCK_active_mi);
+      // Error already printed
+      break;
+    }
+
+    if (mi->using_gtid == Master_info::USE_GTID_NO)
+    {
+      mysql_mutex_unlock(&LOCK_active_mi);
+      // FIXME - Farnham Print error
+      break;
+    }
+
+    if (!start_provisioning(thd, mi, 1 /* net report*/))
+      my_ok(thd);
+
+    mysql_mutex_unlock(&LOCK_active_mi);
     break;
   }
 #endif /* HAVE_REPLICATION */

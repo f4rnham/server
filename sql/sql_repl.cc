@@ -2988,11 +2988,14 @@ int start_slave(THD* thd , Master_info* mi,  bool net_report)
 
   lock_slave_threads(mi);  // this allows us to cleanly read slave_running
   // Get a mask of _stopped_ threads
-  init_thread_mask(&thread_mask,mi,1 /* inverse */);
+  init_thread_mask(&thread_mask, mi, 1 /* inverse */);
+
+  // Can't start slave if slave provisioning is running - LOAD DATA FROM MASTER
+  // FIXME - Farnham SLAVE_IO_PROVISIONING check
 
   if (thd->lex->mi.gtid_pos_str.str)
   {
-    if (thread_mask != (SLAVE_IO|SLAVE_SQL))
+    if (thread_mask != (SLAVE_IO_REPLICATION | SLAVE_SQL))
     {
       slave_errno= ER_SLAVE_WAS_RUNNING;
       goto err;
@@ -3170,7 +3173,11 @@ int stop_slave(THD* thd, Master_info* mi, bool net_report )
   int thread_mask;
   lock_slave_threads(mi);
   // Get a mask of _running_ threads
-  init_thread_mask(&thread_mask,mi,0 /* not inverse*/);
+  init_thread_mask(&thread_mask, mi, 0 /* not inverse*/);
+
+  // FIXME - Farnham Handle SLAVE_IO_PROVISIONING thread - ignore whole command
+  // if provisioning is active? + make special command for provisioning cancel
+
   /*
     Below we will stop all running threads.
     But if the user wants to stop only one thread, do as if the other thread
@@ -3206,6 +3213,96 @@ int stop_slave(THD* thd, Master_info* mi, bool net_report )
 
 
 /**
+  Execute a LOAD DATA FROM MASTER statement.
+
+  @param thd Pointer to THD object for the client thread executing the
+  statement.
+
+  @param mi Pointer to Master_info object for the slave's IO thread.
+
+  @param net_report If true, saves the exit status into thd->stmt_da.
+
+  @retval 0 success
+  @retval 1 error
+  @retval -1 fatal error
+*/
+
+int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
+{
+  int slave_errno= 0;
+  int thread_mask;
+  char master_info_file_tmp[FN_REFLEN];
+  char relay_log_info_file_tmp[FN_REFLEN];
+  DBUG_ENTER("start_provisioning");
+
+  if (check_access(thd, SUPER_ACL, any_db, NULL, NULL, 0, 0))
+    DBUG_RETURN(-1);
+
+  create_logfile_name_with_suffix(master_info_file_tmp,
+                                  sizeof(master_info_file_tmp),
+                                  master_info_file, 0,
+                                  &mi->cmp_connection_name);
+  create_logfile_name_with_suffix(relay_log_info_file_tmp,
+                                  sizeof(relay_log_info_file_tmp),
+                                  relay_log_info_file, 0,
+                                  &mi->cmp_connection_name);
+
+  // This allows us to cleanly read slave_running
+  lock_slave_threads(mi);
+
+  // Get a mask of _stopped_ threads
+  init_thread_mask(&thread_mask, mi, 1 /* inverse */);
+
+  // Check for already running replication IO thread
+  // FIXME - Farnham
+//   push_warning(thd, Sql_condition::WARN_LEVEL_NOTE, ER_SLAVE_WAS_RUNNING,
+//                ER(ER_SLAVE_WAS_RUNNING));
+
+  // Check for already running data sync (provisioning)
+  //  FIXME - Farnham
+
+  if (init_master_info(mi, master_info_file_tmp, relay_log_info_file_tmp, 0,
+      thread_mask))
+  {
+    slave_errno= ER_MASTER_INFO;
+  }
+  else
+  {
+    // Handle case, when there was already issued START SLAVE command
+    // in the past and slave is so far behind, that master no longer have
+    // appropriate binlogs and operator issued resync command
+    // Action: Remove relay logs, reset remembered gtid positions
+    // Alternative: Specialized version of init_master_info will handle
+    // all of this
+    // FIXME - Farnham
+//    purge_relay_logs(&mi->rli, NULL, 0, &errmsg);
+//    mi->events_queued_since_last_gtid= 0;
+//    mi->gtid_reconnect_event_skip_count= 0;
+//    mi->rli.restart_gtid_pos.reset();
+//    ...
+
+    slave_errno = start_slave_provisioning_threads(0 /*no mutex */,
+                                          1 /* wait for start */,
+                                          mi, thread_mask);
+  }
+
+err:
+  unlock_slave_threads(mi);
+  thd_proc_info(thd, 0);
+
+  if (slave_errno)
+  {
+    if (net_report)
+      my_error(slave_errno, MYF(0),
+               (int) mi->connection_name.length,
+               mi->connection_name.str);
+    DBUG_RETURN(slave_errno == ER_BAD_SLAVE ? -1 : 1);
+  }
+
+  DBUG_RETURN(0);
+}
+
+/**
   Execute a RESET SLAVE statement.
 
   @param thd Pointer to THD object of the client thread executing the
@@ -3229,6 +3326,9 @@ int reset_slave(THD *thd, Master_info* mi)
 
   lock_slave_threads(mi);
   init_thread_mask(&thread_mask,mi,0 /* not inverse */);
+
+  // FIXME - Farnham Handle SLAVE_IO_PROVISIONING with special error
+
   if (thread_mask) // We refuse if any slave thread is running
   {
     unlock_slave_threads(mi);

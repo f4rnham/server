@@ -1061,7 +1061,7 @@ bool Master_info_index::init_all_master_info()
     }
 
     lock_slave_threads(mi);
-    init_thread_mask(&thread_mask,mi,0 /*not inverse*/);
+    init_thread_mask(&thread_mask, mi, 0 /*not inverse*/);
 
     create_logfile_name_with_suffix(buf_master_info_file,
                                     sizeof(buf_master_info_file),
@@ -1130,7 +1130,7 @@ bool Master_info_index::init_all_master_info()
               mi,
               buf_master_info_file,
               buf_relay_log_info_file,
-              SLAVE_IO | SLAVE_SQL))
+              SLAVE_IO_REPLICATION | SLAVE_SQL))
         {
           sql_print_error("Failed to create slave threads for connection '%.*s'",
                           (int) connection_name.length,

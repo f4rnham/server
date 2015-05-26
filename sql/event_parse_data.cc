@@ -567,7 +567,7 @@ void Event_parse_data::check_originator_id(THD *thd)
   /* Disable replicated events on slave. */
   if ((WSREP(thd) && IF_WSREP(thd->wsrep_applier, 0)) ||
       (thd->system_thread == SYSTEM_THREAD_SLAVE_SQL) ||
-      (thd->system_thread == SYSTEM_THREAD_SLAVE_IO))
+      (thd->system_thread == SYSTEM_THREAD_SLAVE_IO_REPLICATION))
   {
     DBUG_PRINT("info", ("Invoked object status set to SLAVESIDE_DISABLED."));
     if ((status == Event_parse_data::ENABLED) ||
