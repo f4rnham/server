@@ -1,0 +1,10 @@
+# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
+
+--source include/master-slave.inc
+
+--connection master
+
+--connection slave
+LOAD DATA FROM MASTER;
+
+--source include/rpl_end.inc

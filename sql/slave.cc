@@ -4294,6 +4294,11 @@ err_during_init:
   @param arg Pointer to Master_info struct that holds information for
   the IO thread.
 
+  @note Functionality from replication io thread, removed for simplicity, may 
+  may even be useless (hooks)
+  1) Hooks - thread_start, after_read_event, after_queue_event, thread_stop
+  2) Debug reconnect after - dump, event
+
   @return Always 0.
 */
 pthread_handler_t handle_slave_io_provisioning(void *arg)
@@ -4308,7 +4313,6 @@ pthread_handler_t handle_slave_io_provisioning(void *arg)
   int ret;
   rpl_io_thread_info io_info;
 #ifndef DBUG_OFF
-  uint retry_count_reg= 0, retry_count_dump= 0, retry_count_event= 0;
   mi->dbug_do_disconnect= false;
 #endif
   // needs to call my_thread_init(), otherwise we get a coredump in DBUG_ stuff
@@ -4319,7 +4323,7 @@ pthread_handler_t handle_slave_io_provisioning(void *arg)
   mysql= NULL ;
   retry_count= 0;
 
-  thd= new THD; // note that constructor of THD uses DBUG_ !
+  thd= new THD(); // note that constructor of THD uses DBUG_ !
 
   mysql_mutex_lock(&mi->run_lock);
   /* Inform waiting threads that slave has started */
@@ -4342,30 +4346,24 @@ pthread_handler_t handle_slave_io_provisioning(void *arg)
     goto err_during_init;
   }
   thd->system_thread_info.rpl_io_info= &io_info;
+
   mysql_mutex_lock(&LOCK_thread_count);
   threads.append(thd);
   mysql_mutex_unlock(&LOCK_thread_count);
-  mi->slave_running = MYSQL_SLAVE_RUN_NOT_CONNECT;
-  mi->abort_slave = 0;
+
+  mi->slave_running= MYSQL_SLAVE_RUN_NOT_CONNECT;
+  mi->abort_slave= 0;
   mysql_mutex_unlock(&mi->run_lock);
   mysql_cond_broadcast(&mi->start_cond);
 
-  DBUG_PRINT("master_info",("log_file_name: '%s'  position: %s",
+  DBUG_PRINT("master_info", ("log_file_name: '%s'  position: %s",
                             mi->master_log_name,
-                            llstr(mi->master_log_pos,llbuff)));
+                            llstr(mi->master_log_pos, llbuff)));
 
   /* This must be called before run any binlog_relay_io hooks */
   my_pthread_setspecific_ptr(RPL_MASTER_INFO, mi);
 
-  /* FIXME - Farnham hooks, what are they used for?
-  if (RUN_HOOK(binlog_relay_io, thread_start, (thd, mi)))
-  {
-    mi->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, NULL,
-               ER(ER_SLAVE_FATAL_ERROR), "Failed to run 'thread_start' hook");
-    goto err;
-  }*/
-
-  if (!(mi->mysql = mysql = mysql_init(NULL)))
+  if (!(mi->mysql= mysql= mysql_init(NULL)))
   {
     mi->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, NULL,
                ER(ER_SLAVE_FATAL_ERROR), "error in mysql_init()");
@@ -4390,7 +4388,235 @@ pthread_handler_t handle_slave_io_provisioning(void *arg)
   }
 
 
-  // ... 
+connected:
+
+  /*
+    When the IO thread (re)connects to the master using GTID, it will
+    connect at the start of an event group. But the IO thread may have
+    previously logged part of the following event group to the relay
+    log.
+
+    When the IO and SQL thread are started together, we erase any previous
+    relay logs, but this is not possible/desirable while the SQL thread is
+    running. To avoid duplicating partial event groups in the relay logs in
+    this case, we remember the count of events in any partially logged event
+    group before the reconnect, and then here at connect we set up a counter
+    to skip the already-logged part of the group.
+  */
+  mi->gtid_reconnect_event_skip_count= mi->events_queued_since_last_gtid;
+  mi->gtid_event_seen= false;
+
+  // TODO: the assignment below should be under mutex (5.0)
+  mi->slave_running= MYSQL_SLAVE_RUN_CONNECT;
+  thd->slave_net= &mysql->net;
+  THD_STAGE_INFO(thd, stage_checking_master_version);
+  ret= get_master_version_and_clock(mysql, mi);
+  if (ret == 1)
+    /* Fatal error */
+    goto err;
+
+  if (ret == 2) 
+  { 
+    if (check_io_slave_killed(mi, "Slave provisioning I/O thread killed"
+                              "while calling get_master_version_and_clock(...)"))
+      goto err;
+    suppress_warnings= FALSE;
+    /*
+      Try to reconnect because the error was caused by a transient network
+      problem
+    */
+    if (try_to_reconnect(thd, mysql, mi, &retry_count, suppress_warnings,
+                             reconnect_messages[SLAVE_RECON_ACT_REG]))
+      goto err;
+    goto connected;
+  }
+
+  // Master doesn't support provisioning
+  // FIXME - Farnham version number
+  if (mysql_get_server_version(mysql) <= 0)
+    ;
+
+  DBUG_PRINT("info",("Starting reading binary log from master"));
+  while (!io_slave_killed(mi))
+  {
+    THD_STAGE_INFO(thd, stage_requesting_binlog_dump);
+    if (request_dump(thd, mysql, mi, &suppress_warnings))
+    {
+      sql_print_error("Failed on request_dump()");
+      if (check_io_slave_killed(mi, "Slave I/O thread killed while \
+requesting master dump") ||
+          try_to_reconnect(thd, mysql, mi, &retry_count, suppress_warnings,
+                           reconnect_messages[SLAVE_RECON_ACT_DUMP]))
+        goto err;
+      goto connected;
+    }
+
+    const char *event_buf;
+
+    DBUG_ASSERT(mi->last_error().number == 0);
+    while (!io_slave_killed(mi))
+    {
+      ulong event_len;
+      /*
+         We say "waiting" because read_event() will wait if there's nothing to
+         read. But if there's something to read, it will not wait. The
+         important thing is to not confuse users by saying "reading" whereas
+         we're in fact receiving nothing.
+      */
+      THD_STAGE_INFO(thd, stage_waiting_for_master_to_send_event);
+      event_len= read_event(mysql, mi, &suppress_warnings);
+      if (check_io_slave_killed(mi, "Slave I/O thread killed while \
+reading event"))
+        goto err;
+
+      if (event_len == packet_error)
+      {
+        uint mysql_error_number= mysql_errno(mysql);
+        switch (mysql_error_number) {
+        case CR_NET_PACKET_TOO_LARGE:
+          sql_print_error("\
+Log entry on master is longer than slave_max_allowed_packet (%lu) on \
+slave. If the entry is correct, restart the server with a higher value of \
+slave_max_allowed_packet",
+                         slave_max_allowed_packet);
+          mi->report(ERROR_LEVEL, ER_NET_PACKET_TOO_LARGE, NULL,
+                     "%s", "Got a packet bigger than 'slave_max_allowed_packet' bytes");
+          goto err;
+        case ER_MASTER_FATAL_ERROR_READING_BINLOG:
+          mi->report(ERROR_LEVEL, ER_MASTER_FATAL_ERROR_READING_BINLOG, NULL,
+                     ER(ER_MASTER_FATAL_ERROR_READING_BINLOG),
+                     mysql_error_number, mysql_error(mysql));
+          goto err;
+        case ER_OUT_OF_RESOURCES:
+          sql_print_error("\
+Stopping slave I/O thread due to out-of-memory error from master");
+          mi->report(ERROR_LEVEL, ER_OUT_OF_RESOURCES, NULL,
+                     "%s", ER(ER_OUT_OF_RESOURCES));
+          goto err;
+        }
+        if (try_to_reconnect(thd, mysql, mi, &retry_count, suppress_warnings,
+                             reconnect_messages[SLAVE_RECON_ACT_EVENT]))
+          goto err;
+        goto connected;
+      } // if (event_len == packet_error)
+
+      retry_count= 0;                    // ok event, reset retry counter
+      THD_STAGE_INFO(thd, stage_queueing_master_event_to_the_relay_log);
+      event_buf= (const char*)mysql->net.read_pos + 1;
+
+      /* XXX: 'synced' should be updated by queue_event to indicate
+         whether event has been synced to disk */
+      bool synced= 0;
+      if (queue_event(mi, event_buf, event_len))
+      {
+        mi->report(ERROR_LEVEL, ER_SLAVE_RELAY_LOG_WRITE_FAILURE, NULL,
+                   ER(ER_SLAVE_RELAY_LOG_WRITE_FAILURE),
+                   "could not queue event from master");
+        goto err;
+      }
+
+      /*
+        See if the relay logs take too much space.
+        We don't lock mi->rli.log_space_lock here; this dirty read saves time
+        and does not introduce any problem:
+        - if mi->rli.ignore_log_space_limit is 1 but becomes 0 just after (so
+        the clean value is 0), then we are reading only one more event as we
+        should, and we'll block only at the next event. No big deal.
+        - if mi->rli.ignore_log_space_limit is 0 but becomes 1 just
+        after (so the clean value is 1), then we are going into
+        wait_for_relay_log_space() for no reason, but this function
+        will do a clean read, notice the clean value and exit
+        immediately.
+      */
+#ifndef DBUG_OFF
+      {
+        char llbuf1[22], llbuf2[22];
+        DBUG_PRINT("info", ("log_space_limit=%s log_space_total=%s \
+ignore_log_space_limit=%d",
+                            llstr(rli->log_space_limit,llbuf1),
+                            llstr(rli->log_space_total,llbuf2),
+                            (int) rli->ignore_log_space_limit));
+      }
+#endif
+
+      if (rli->log_space_limit && rli->log_space_limit <
+          rli->log_space_total &&
+          !rli->ignore_log_space_limit)
+        if (wait_for_relay_log_space(rli))
+        {
+          sql_print_error("Slave I/O thread aborted while waiting for relay \
+log space");
+          goto err;
+        }
+    }
+  }
+
+  // error = 0;
+err:
+  // Print the current replication position
+  {
+    String tmp;
+    mi->gtid_current_pos.to_string(&tmp);
+    sql_print_information("Slave I/O thread exiting, read up to log '%s', "
+                          "position %s; GTID position %s",
+                          IO_RPL_LOG_NAME, llstr(mi->master_log_pos,llbuff),
+                          tmp.c_ptr_safe());
+  }
+
+  thd->reset_query();
+  thd->reset_db(NULL, 0);
+  if (mysql)
+  {
+    /*
+      Here we need to clear the active VIO before closing the
+      connection with the master.  The reason is that THD::awake()
+      might be called from terminate_slave_thread() because somebody
+      issued a STOP SLAVE.  If that happends, the close_active_vio()
+      can be called in the middle of closing the VIO associated with
+      the 'mysql' object, causing a crash.
+    */
+#ifdef SIGNAL_WITH_VIO_CLOSE
+    thd->clear_active_vio();
+#endif
+    mysql_close(mysql);
+    mi->mysql=0;
+  }
+  write_ignored_events_info_to_relay_log(thd, mi);
+  if (mi->using_gtid != Master_info::USE_GTID_NO)
+    flush_master_info(mi, TRUE, TRUE);
+  THD_STAGE_INFO(thd, stage_waiting_for_slave_mutex_on_exit);
+  thd->add_status_to_global();
+  mysql_mutex_lock(&mi->run_lock);
+
+err_during_init:
+  /* Forget the relay log's format */
+  delete mi->rli.relay_log.description_event_for_queue;
+  mi->rli.relay_log.description_event_for_queue= 0;
+  // TODO: make rpl_status part of Master_info
+  change_rpl_status(RPL_ACTIVE_SLAVE,RPL_IDLE_SLAVE);
+  mysql_mutex_lock(&LOCK_thread_count);
+  thd->unlink();
+  mysql_mutex_unlock(&LOCK_thread_count);
+  THD_CHECK_SENTRY(thd);
+  delete thd;
+  mi->abort_slave= 0;
+  mi->slave_running= MYSQL_SLAVE_NOT_RUN;
+  mi->io_thd= 0;
+  /*
+    Note: the order of the two following calls (first broadcast, then unlock)
+    is important. Otherwise a killer_thread can execute between the calls and
+    delete the mi structure leading to a crash! (see BUG#25306 for details)
+   */ 
+  mysql_cond_broadcast(&mi->stop_cond);       // tell the world we are done
+  mysql_mutex_unlock(&mi->run_lock);
+
+  DBUG_LEAVE;                                   // Must match DBUG_ENTER()
+  my_thread_end();
+#ifdef HAVE_OPENSSL
+  ERR_remove_state(0);
+#endif
+  pthread_exit(0);
+  return 0;                                     // Avoid compiler warnings
 }
 
 /*

@@ -1,0 +1,4 @@
+include/master-slave.inc
+[connection master]
+LOAD DATA FROM MASTER;
+include/rpl_end.inc
