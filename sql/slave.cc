@@ -437,8 +437,6 @@ int init_slave()
     if (start_slave_threads(1 /* need mutex */,
                             0 /* no wait for start*/,
                             active_mi,
-                            master_info_file,
-                            relay_log_info_file,
                             SLAVE_IO | SLAVE_SQL))
     {
       sql_print_error("Failed to create slave threads");
@@ -893,8 +891,7 @@ int start_slave_thread(
 */
 
 int start_slave_threads(bool need_slave_mutex, bool wait_for_start,
-                        Master_info* mi, const char* master_info_fname,
-                        const char* slave_info_fname, int thread_mask)
+                        Master_info* mi, int thread_mask)
 {
   mysql_mutex_t *lock_io=0, *lock_sql=0, *lock_cond_io=0, *lock_cond_sql=0;
   mysql_cond_t* cond_io=0, *cond_sql=0;
@@ -943,8 +940,19 @@ int start_slave_threads(bool need_slave_mutex, bool wait_for_start,
     strmake(mi->rli.group_master_log_name, mi->master_log_name,
             sizeof(mi->rli.group_master_log_name)-1);
 
-    error= rpl_load_gtid_state(&mi->gtid_current_pos, mi->using_gtid ==
-                                             Master_info::USE_GTID_CURRENT_POS);
+    // Ignore old gtid state if we are running in provisioning mode,
+    // all data will be copied from scratch
+    if (!mi->provisioning_mode)
+    {
+      error= rpl_load_gtid_state(&mi->gtid_current_pos, mi->using_gtid ==
+                                 Master_info::USE_GTID_CURRENT_POS);
+    }
+    else
+    {
+      mi->gtid_current_pos.reset();
+      // FIXME - Farnham reset more things and also not only in memory
+    }
+
     mi->events_queued_since_last_gtid= 0;
     mi->gtid_reconnect_event_skip_count= 0;
 
@@ -3042,6 +3050,9 @@ static int request_dump(THD *thd, MYSQL* mysql, Master_info* mi,
   if (opt_log_slave_updates && opt_replicate_annotate_row_events)
     binlog_flags|= BINLOG_SEND_ANNOTATE_ROWS_EVENT;
 
+  if (mi->provisioning_mode)
+    binlog_flags|= BINLOG_PROVISIONING_MODE;
+
   if (RUN_HOOK(binlog_relay_io,
                before_request_transmit,
                (thd, mi, binlog_flags)))
@@ -3845,6 +3856,8 @@ pthread_handler_t handle_slave_io(void *arg)
   my_pthread_setspecific_ptr(RPL_MASTER_INFO, mi);
 
   /* Load the set of seen GTIDs, if we did not already. */
+  // FIXME - Farnham reset gtid state instead of loading it if we are running
+  // in provisioning mode
   if (rpl_load_gtid_slave_state(thd))
   {
     mi->report(ERROR_LEVEL, thd->get_stmt_da()->sql_errno(), NULL,

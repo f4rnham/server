@@ -3112,8 +3112,6 @@ int start_slave(THD* thd , Master_info* mi,  bool net_report)
         slave_errno = start_slave_threads(0 /*no mutex */,
                                           1 /* wait for start */,
                                           mi,
-                                          master_info_file_tmp,
-                                          relay_log_info_file_tmp,
                                           thread_mask);
     }
     else
@@ -3204,6 +3202,82 @@ int stop_slave(THD* thd, Master_info* mi, bool net_report )
   DBUG_RETURN(0);
 }
 
+
+/**
+  Execute a LOAD DATA FROM MASTER statement.
+
+  @param thd Pointer to THD object for the client thread executing the
+  statement.
+
+  @param mi Pointer to Master_info object for the slave's IO thread.
+
+  @param net_report If true, saves the exit status into thd->stmt_da.
+
+  @retval 0 success
+  @retval 1 error
+  @retval -1 fatal error
+*/
+
+int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
+{
+  int slave_errno= 0;
+  int thread_mask;
+  char master_info_file_tmp[FN_REFLEN];
+  char relay_log_info_file_tmp[FN_REFLEN];
+  DBUG_ENTER("start_provisioning");
+
+  if (check_access(thd, SUPER_ACL, any_db, NULL, NULL, 0, 0))
+    DBUG_RETURN(-1);
+
+  create_logfile_name_with_suffix(master_info_file_tmp,
+                                  sizeof(master_info_file_tmp),
+                                  master_info_file, 0,
+                                  &mi->cmp_connection_name);
+  create_logfile_name_with_suffix(relay_log_info_file_tmp,
+                                  sizeof(relay_log_info_file_tmp),
+                                  relay_log_info_file, 0,
+                                  &mi->cmp_connection_name);
+
+  // This allows us to cleanly read slave_running
+  lock_slave_threads(mi);
+
+  // Get a mask of _stopped_ threads
+  init_thread_mask(&thread_mask, mi, 1 /* inverse */);
+
+  // If IO thread is already running, fail with error,
+  // it needs to connect to master with provisioning configuration
+  if ((thread_mask & SLAVE_IO) == 0)
+    ; // FIXME - Farnham
+
+  if (init_master_info(mi, master_info_file_tmp, relay_log_info_file_tmp, 0,
+      thread_mask))
+  {
+    slave_errno= ER_MASTER_INFO;
+  }
+  else
+  {
+    mi->provisioning_mode= true;
+
+    slave_errno = start_slave_threads(0 /*no mutex */,
+                                      1 /* wait for start */,
+                                      mi, thread_mask);
+  }
+
+err:
+  unlock_slave_threads(mi);
+  thd_proc_info(thd, 0);
+
+  if (slave_errno)
+  {
+    if (net_report)
+      my_error(slave_errno, MYF(0),
+               (int) mi->connection_name.length,
+               mi->connection_name.str);
+    DBUG_RETURN(slave_errno == ER_BAD_SLAVE ? -1 : 1);
+  }
+
+  DBUG_RETURN(0);
+}
 
 /**
   Execute a RESET SLAVE statement.

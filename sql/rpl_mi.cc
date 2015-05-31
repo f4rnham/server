@@ -40,7 +40,8 @@ Master_info::Master_info(LEX_STRING *connection_name_arg,
    heartbeat_period(0), received_heartbeats(0), master_id(0),
    prev_master_id(0),
    using_gtid(USE_GTID_NO), events_queued_since_last_gtid(0),
-   gtid_reconnect_event_skip_count(0), gtid_event_seen(false)
+   gtid_reconnect_event_skip_count(0), gtid_event_seen(false),
+   provisioning_mode(false)
 {
   host[0] = 0; user[0] = 0; password[0] = 0;
   ssl_ca[0]= 0; ssl_capath[0]= 0; ssl_cert[0]= 0;
@@ -1128,8 +1129,6 @@ bool Master_info_index::init_all_master_info()
         if (start_slave_threads(1 /* need mutex */,
               0 /* no wait for start*/,
               mi,
-              buf_master_info_file,
-              buf_relay_log_info_file,
               SLAVE_IO | SLAVE_SQL))
         {
           sql_print_error("Failed to create slave threads for connection '%.*s'",

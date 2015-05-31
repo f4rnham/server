@@ -303,6 +303,12 @@ class Master_info : public Slave_reporting_capability
 
   /* The parallel replication mode. */
   enum_slave_parallel_mode parallel_mode;
+
+  /*
+    True if master is sending slave data in provisioning mode - chunks of his
+    original data along with newest data from binlog.
+  */
+  bool provisioning_mode;
 };
 
 int init_master_info(Master_info* mi, const char* master_info_fname,

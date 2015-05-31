@@ -3556,6 +3556,36 @@ end_with_restore_list:
     mysql_mutex_unlock(&LOCK_active_mi);
     break;
   }
+  case SQLCOM_SLAVE_PROVISIONING:
+  {
+    LEX_MASTER_INFO* lex_mi= &thd->lex->mi;
+    Master_info *mi;
+
+    mysql_mutex_lock(&LOCK_active_mi);
+
+    mi= master_info_index->get_master_info(&lex_mi->connection_name,
+                                           Sql_condition::WARN_LEVEL_ERROR);
+
+    if (!mi)
+    {
+      mysql_mutex_unlock(&LOCK_active_mi);
+      // Error already printed
+      break;
+    }
+
+    if (mi->using_gtid == Master_info::USE_GTID_NO)
+    {
+      mysql_mutex_unlock(&LOCK_active_mi);
+      // FIXME - Farnham Print error
+      break;
+    }
+
+    if (!start_provisioning(thd, mi, 1 /* net report*/))
+      my_ok(thd);
+
+    mysql_mutex_unlock(&LOCK_active_mi);
+    break;
+  }
 #endif /* HAVE_REPLICATION */
   case SQLCOM_RENAME_TABLE:
   {

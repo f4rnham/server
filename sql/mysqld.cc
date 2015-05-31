@@ -3852,6 +3852,7 @@ SHOW_VAR com_status_vars[]= {
   {"show_warnings",        STMT_STATUS(SQLCOM_SHOW_WARNS)},
   {"shutdown",             STMT_STATUS(SQLCOM_SHUTDOWN)},
   {"signal",               STMT_STATUS(SQLCOM_SIGNAL)},
+  {"slave_provisioning",   STMT_STATUS(SQLCOM_SLAVE_PROVISIONING)},
   {"start_all_slaves",     STMT_STATUS(SQLCOM_SLAVE_ALL_START)},
   {"start_slave",          STMT_STATUS(SQLCOM_SLAVE_START)},
   {"stmt_close",           COM_STATUS(com_stmt_close)},
