@@ -1671,31 +1671,52 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
 #ifndef EMBEDDED_LIBRARY
   case COM_BINLOG_DUMP:
     {
-      ulong pos;
+      my_off_t pos;
       ushort flags;
       uint32 slave_server_id;
+      char* log_ident;
 
       status_var_increment(thd->status_var.com_other);
 
       thd->enable_slow_log&= opt_log_slow_admin_statements;
       thd->query_plan_flags|= QPLAN_ADMIN;
       if (check_global_access(thd, REPL_SLAVE_ACL))
-	break;
+        break;
 
       /* TODO: The following has to be changed to an 8 byte integer */
-      pos = uint4korr(packet);
-      flags = uint2korr(packet + 4);
-      thd->variables.server_id=0; /* avoid suicide */
-      if ((slave_server_id= uint4korr(packet+6))) // mysqlbinlog.server_id==0
-	kill_zombie_dump_threads(slave_server_id);
-      thd->variables.server_id = slave_server_id;
+      pos= (my_off_t)uint4korr(packet);
+      flags= uint2korr(packet + 4);
 
-      general_log_print(thd, command, "Log: '%s'  Pos: %ld", packet+10,
-                      (long) pos);
-      mysql_binlog_send(thd, thd->strdup(packet + 10), (my_off_t) pos, flags);
-      unregister_slave(thd,1,1);
-      /*  fake COM_QUIT -- if we get here, the thread needs to terminate */
-      error = TRUE;
+      // In provisioning mode, master starts sending data from current position
+      if (flags & BINLOG_PROVISIONING_MODE)
+      {
+        DBUG_ASSERT(mysql_bin_log.is_open());
+
+        LOG_INFO li;
+        mysql_bin_log.get_current_log(&li);
+        size_t dir_len= dirname_length(li.log_file_name);
+        log_ident= thd->strmake(li.log_file_name + dir_len,
+                                strlen(li.log_file_name) - dir_len);
+        pos= li.pos;
+      }
+      else
+      {
+        log_ident= thd->strdup(packet + 10);
+      }
+
+      // FIXME - Farnham handle 'zombie' provisioning threads in special way?
+      thd->variables.server_id= 0; /* avoid suicide */
+      if ((slave_server_id= uint4korr(packet + 6))) // mysqlbinlog.server_id==0
+        kill_zombie_dump_threads(slave_server_id);
+      thd->variables.server_id= slave_server_id;
+
+      general_log_print(thd, command, "Log: '%s'  Pos: %ld", log_ident,
+                        (long)pos);
+      mysql_binlog_send(thd, log_ident, pos, flags);
+
+      unregister_slave(thd, 1, 1);
+      /* Fake COM_QUIT -- if we get here, the thread needs to terminate */
+      error= TRUE;
       break;
     }
 #endif
@@ -3575,9 +3596,9 @@ end_with_restore_list:
 
     if (mi->using_gtid == Master_info::USE_GTID_NO)
     {
-      mysql_mutex_unlock(&LOCK_active_mi);
+      //mysql_mutex_unlock(&LOCK_active_mi);
       // FIXME - Farnham Print error
-      break;
+      //break;
     }
 
     if (!start_provisioning(thd, mi, 1 /* net report*/))
