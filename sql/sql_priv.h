@@ -325,7 +325,12 @@
 #endif /* !MYSQL_CLIENT */
 
 #define BINLOG_SEND_ANNOTATE_ROWS_EVENT   2
-#define BINLOG_PROVISIONING_MODE 4
+
+/*
+  MariaDB specific flags, taken from end of available range (16 bits)
+  to reduce chance of compatibility issues with MySQL
+*/
+#define BINLOG_DUMP_PROVISIONING_MODE 0x8000
 
 #ifndef MYSQL_CLIENT
 

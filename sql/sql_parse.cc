@@ -1688,7 +1688,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       flags= uint2korr(packet + 4);
 
       // In provisioning mode, master starts sending data from current position
-      if (flags & BINLOG_PROVISIONING_MODE)
+      if (flags & BINLOG_DUMP_PROVISIONING_MODE)
       {
         DBUG_ASSERT(mysql_bin_log.is_open());
 

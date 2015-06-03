@@ -3051,7 +3051,7 @@ static int request_dump(THD *thd, MYSQL* mysql, Master_info* mi,
     binlog_flags|= BINLOG_SEND_ANNOTATE_ROWS_EVENT;
 
   if (mi->provisioning_mode)
-    binlog_flags|= BINLOG_PROVISIONING_MODE;
+    binlog_flags|= BINLOG_DUMP_PROVISIONING_MODE;
 
   if (RUN_HOOK(binlog_relay_io,
                before_request_transmit,
@@ -3932,6 +3932,15 @@ connected:
     */
     mi->gtid_reconnect_event_skip_count= mi->events_queued_since_last_gtid;
     mi->gtid_event_seen= false;
+  }
+
+  // FIXME - Farnham version number + report message
+  if (mi->provisioning_mode && mysql_get_server_version(mysql) < 0)
+  {
+    sql_print_error("Master does not support provisioning");
+    mi->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, NULL,
+               ER(ER_SLAVE_FATAL_ERROR), "Master does not support provisioning");
+    goto err;
   }
 
 #ifdef ENABLED_DEBUG_SYNC
