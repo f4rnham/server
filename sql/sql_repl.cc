@@ -30,6 +30,7 @@
 #include <my_dir.h>
 #include "rpl_handler.h"
 #include "debug_sync.h"
+#include "rpl_provisioning.h"
 
 
 enum enum_gtid_until_state {
@@ -162,6 +163,8 @@ struct binlog_send_info {
   bool clear_initial_log_pos;
   bool should_stop;
 
+  provisioning_send_info *provisioning_info;
+
   binlog_send_info(THD *thd_arg, String *packet_arg, ushort flags_arg,
                    char *lfn)
     : thd(thd_arg), net(&thd_arg->net), packet(packet_arg),
@@ -179,7 +182,8 @@ struct binlog_send_info {
       hb_info_counter(0),
 #endif
       clear_initial_log_pos(false),
-      should_stop(false)
+      should_stop(false),
+      provisioning_info(NULL)
   {
     error_text[0] = 0;
     bzero(&error_gtid, sizeof(error_gtid));
@@ -2464,9 +2468,14 @@ static int wait_new_events(binlog_send_info *info,         /* in */
 }
 
 /**
- * get end pos of current log file, this function
- * will wait if there is nothing available
+  Get end pos of current log file, this function
+  will wait if there is nothing available.
+
+  @return 0    - stopped
+          1    - error occured
+          else - the binlog end position.
  */
+
 static my_off_t get_binlog_end_pos(binlog_send_info *info,
                                    IO_CACHE* log,
                                    LOG_INFO* linfo)
@@ -2530,8 +2539,25 @@ static my_off_t get_binlog_end_pos(binlog_send_info *info,
         return 1;
       }
 
-      if (wait_new_events(info, linfo, binlog_end_pos_filename, &end_pos))
-        return 1;
+      // If we are performing regular replication, wait for new events
+      // in binlog
+      if (!(info->flags & BINLOG_DUMP_PROVISIONING_MODE))
+      {
+        if (wait_new_events(info, linfo, binlog_end_pos_filename, &end_pos))
+          return 1;
+      }
+      else
+      {
+        int8 res;
+        if ((res= info->provisioning_info->send_provisioning_data() >= 0))
+          return res;
+
+        // Recheck if binlog end position moved while we were sending
+        // provisioning data
+        mysql_bin_log.lock_binlog_end_pos();
+        end_pos= mysql_bin_log.get_binlog_end_pos(binlog_end_pos_filename);
+        mysql_bin_log.unlock_binlog_end_pos();
+      }
     }
   } while (!should_stop(info));
 
@@ -2752,6 +2778,10 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
   */
   info->heartbeat_period= get_heartbeat_period(thd);
 
+  // Initialize provisioning info if applicable
+  if (info->flags & BINLOG_DUMP_PROVISIONING_MODE)
+    info->provisioning_info= new provisioning_send_info(thd);
+
   while (!should_stop(info))
   {
     /*
@@ -2874,6 +2904,7 @@ err:
   mysql_mutex_unlock(&LOCK_thread_count);
   thd->variables.max_allowed_packet= old_max_allowed_packet;
   delete info->fdev;
+  delete info->provisioning_info;
 
   if (info->error == ER_MASTER_FATAL_ERROR_READING_BINLOG && binlog_open)
   {
