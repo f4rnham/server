@@ -3,6 +3,8 @@
 
 --source include/master-slave.inc
 
+SET GLOBAL debug_dbug="+d,provisioning_hardcoded_data_test";
+
 # Prepare master and slave with same data
 --connection slave
 --source include/stop_slave.inc
@@ -37,5 +39,7 @@ SELECT * FROM t1 ORDER BY a;
 # Cleanup
 --connection master
 DROP TABLE t1;
+
+SET GLOBAL debug_dbug="";
 
 --source include/rpl_end.inc

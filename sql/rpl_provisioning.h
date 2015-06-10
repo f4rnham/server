@@ -15,5 +15,7 @@ class provisioning_send_info
 public:
   provisioning_send_info(THD *thd_arg);
 
+  int8 send_provisioning_data_hardcoded_data_test();
+
   int8 send_provisioning_data();
 };
