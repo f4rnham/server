@@ -2549,7 +2549,7 @@ static my_off_t get_binlog_end_pos(binlog_send_info *info,
       else
       {
         int8 res;
-        if ((res= info->provisioning_info->send_provisioning_data() >= 0))
+        if ((res= info->provisioning_info->send_provisioning_data()) >= 0)
         {
           if (res == 0)
             info->should_stop= true;

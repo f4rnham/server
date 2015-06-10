@@ -27,12 +27,12 @@ sleep 1;
 # Now with pseudo replication running, value inserted on master will get propagated to slave
 --connection master
 INSERT INTO t1 VALUES (2);
-SELECT * FROM t1;
+SELECT * FROM t1 ORDER BY a;
 save_master_pos;
 
 --connection slave
 sync_with_master;
-SELECT * FROM t1;
+SELECT * FROM t1 ORDER BY a;
 
 # Cleanup
 --connection master
