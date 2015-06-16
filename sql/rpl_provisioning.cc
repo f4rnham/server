@@ -44,7 +44,7 @@ int8 provisioning_send_info::send_provisioning_data_hardcoded_data_test()
   static int sent= 45;
 
   if (sent >= 50)
-    return -1;
+    return 0;
 
   ++sent;
 
@@ -158,27 +158,8 @@ int8 provisioning_send_info::send_table_data()
 
 int8 provisioning_send_info::send_provisioning_data()
 {
-  {
-    // This is how following code should look
-    //DBUG_EXECUTE_IF("provisioning_hardcoded_data_test",
-    //                return send_provisioning_data_hardcoded_data_test(););
-    // But if I want to remove debug flag while this function is still looping,
-    // data race on 'cs->stack->keywords' occurs and server crashes
-    // The following is horrible workaround, this code will not be here in
-    // final version anyway
-    static bool run_hardcoded_data_test = false;
-    static bool inited = false;
-    if (!inited)
-    {
-      DBUG_EXECUTE_IF("provisioning_hardcoded_data_test",
-                      run_hardcoded_data_test= true;);
-
-      inited = true;
-    }
-
-    if (run_hardcoded_data_test)
-      return send_provisioning_data_hardcoded_data_test();
-  }
+  DBUG_EXECUTE_IF("provisioning_hardcoded_data_test",
+                  return send_provisioning_data_hardcoded_data_test(););
 
   return send_table_data();
 }
