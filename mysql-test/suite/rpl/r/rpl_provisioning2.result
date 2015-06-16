@@ -1,0 +1,26 @@
+include/master-slave.inc
+[connection master]
+include/stop_slave.inc
+RESET SLAVE;
+CREATE TABLE t1 (a int, PRIMARY KEY (a));
+RESET MASTER;
+CREATE TABLE t1 (a int, PRIMARY KEY (a));
+INSERT INTO t1 VALUES (1);
+INSERT INTO t1 VALUES (2);
+INSERT INTO t1 VALUES (3);
+LOAD DATA FROM MASTER;
+INSERT INTO t1 VALUES (99);
+SELECT * FROM t1 ORDER BY a;
+a
+1
+2
+3
+99
+SELECT * FROM t1 ORDER BY a;
+a
+1
+2
+3
+99
+DROP TABLE t1;
+include/rpl_end.inc

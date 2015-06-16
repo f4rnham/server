@@ -1,0 +1,43 @@
+# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
+# Tested functionality of LOAD DATA FROM MASTER - transfers data from master
+# from table test.t1 to slave
+
+--source include/master-slave.inc
+
+# Prepare master with table and data and slave with table
+--connection slave
+--source include/stop_slave.inc
+RESET SLAVE;
+
+CREATE TABLE t1 (a int, PRIMARY KEY (a));
+
+--connection master
+RESET MASTER;
+CREATE TABLE t1 (a int, PRIMARY KEY (a));
+INSERT INTO t1 VALUES (1);
+INSERT INTO t1 VALUES (2);
+INSERT INTO t1 VALUES (3);
+
+# Start our pseudo replication - slave will recieve 1, 2, 3 values from master
+--connection slave
+LOAD DATA FROM MASTER;
+
+# Slave needs some time to connect to master after LOAD DATA FROM MASTER;
+# Otherwise it will start replicating from point after INSERT and nothing will be replicated
+sleep 1;
+
+# Now with pseudo replication running, value inserted on master will get propagated to slave
+--connection master
+INSERT INTO t1 VALUES (99);
+SELECT * FROM t1 ORDER BY a;
+save_master_pos;
+
+--connection slave
+sync_with_master;
+SELECT * FROM t1 ORDER BY a;
+
+# Cleanup
+--connection master
+DROP TABLE t1;
+
+--source include/rpl_end.inc

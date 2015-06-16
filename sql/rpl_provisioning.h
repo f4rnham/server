@@ -18,4 +18,10 @@ public:
   int8 send_provisioning_data_hardcoded_data_test();
 
   int8 send_provisioning_data();
+
+private:
+  int8 send_event(Log_event& evt);
+
+  void ed_connection_test();
+  int8 send_table_data();
 };
