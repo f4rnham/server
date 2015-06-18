@@ -5,9 +5,141 @@
 #include "sql_prepare.h"
 #include "sql_base.h"
 
-provisioning_send_info::provisioning_send_info(THD *thd_arg) : thd(thd_arg)
+provisioning_send_info::provisioning_send_info(THD *thd_arg)
+  : thd(thd_arg)
+  , tables(NULL)
 {
+  connection= new Ed_connection(thd);
+
   ed_connection_test();
+
+  DBUG_ASSERT(!build_database_list());
+
+  if (!databases.is_empty())
+    DBUG_ASSERT(!build_table_list());
+}
+
+provisioning_send_info::~provisioning_send_info()
+{
+  delete connection;
+
+  List_iterator_fast<char> it(databases);
+  void* name;
+  while (name= it.next_fast())
+    // Names (char*) were allocated by strdup
+    free(name);
+
+  clear_tables_list();
+}
+
+/**
+  Clears list of discovered tables for currently provisioned database
+ */
+
+void provisioning_send_info::clear_tables_list()
+{
+  if (!tables)
+    return;
+
+  List_iterator_fast<char> it(*tables);
+  void* name;
+  while (name= it.next_fast())
+    // Names (char*) were allocated by strdup
+    free(name);
+
+  delete tables;
+  tables= NULL;
+}
+
+bool provisioning_send_info::build_database_list()
+{
+  if (connection->execute_direct({ C_STRING_WITH_LEN("SHOW DATABASES") }))
+  {
+    return true;
+  }
+
+  Ed_result_set *result= connection->use_result_set();
+
+  // We are expecting exactly one result set with one column,
+  // in any other case, something went wrong
+  if (!result || result->get_field_count() != 1 ||
+      connection->has_next_result())
+  {
+    return true;
+  }
+
+  List<Ed_row>& rows= *result;
+  List_iterator_fast<Ed_row> it(rows);
+
+  for (uint32 i= 0; i < rows.elements; ++i)
+  {
+    Ed_row *row= it++;
+
+    // Field count for entire result set was already checked, recheck
+    // in case of internal inconsistency
+    DBUG_ASSERT(row->size() == 1);
+
+    sql_print_information("Discovered database %s", row->get_column(0)->str);
+    databases.push_back(strdup(row->get_column(0)->str));
+  }
+
+  return false;
+}
+
+/**
+  Builds list of tables for currently provisioned database - first in
+  'databases' list
+ */
+
+bool provisioning_send_info::build_table_list()
+{
+  // No database is currently provisioned
+  DBUG_ASSERT(tables == NULL);
+  // There is at least one database left for provisioning
+  DBUG_ASSERT(databases.elements > 0);
+
+  int const max_query_length= sizeof("SHOW TABLES FROM ") + NAME_CHAR_LEN + 1;
+  char query[max_query_length];
+  int length= my_snprintf(query, max_query_length,
+                          "SHOW TABLES FROM %s", databases.head());
+
+  if (length < 0 || length >= max_query_length)
+  {
+    return true;
+  }
+
+  if (connection->execute_direct({ query, length }))
+  {
+    return true;
+  }
+
+  tables= new List<char>();
+  Ed_result_set *result= connection->use_result_set();
+
+  // We are expecting exactly one result set with one column,
+  // in any other case, something went wrong
+  if (!result || result->get_field_count() != 1 ||
+      connection->has_next_result())
+  {
+    return true;
+  }
+
+  List<Ed_row>& rows= *result;
+  List_iterator_fast<Ed_row> it(rows);
+
+  for (uint32 i= 0; i < rows.elements; ++i)
+  {
+    Ed_row *row= it++;
+
+    // Field count for entire result set was already checked, recheck
+    // in case of internal inconsistency
+    DBUG_ASSERT(row->size() == 1);
+
+    sql_print_information("Discovered table %s", row->get_column(0)->str);
+    tables->push_back(strdup(row->get_column(0)->str));
+  }
+
+  return false;
 }
 
 // Helper for conversion of Log_event into data which can be sent
@@ -63,12 +195,11 @@ int8 provisioning_send_info::send_provisioning_data_hardcoded_data_test()
 
 void provisioning_send_info::ed_connection_test()
 {
-  Ed_connection connection(thd);
-  connection.execute_direct({ C_STRING_WITH_LEN("SHOW create DATABASE test") });
+  connection->execute_direct({ C_STRING_WITH_LEN("SHOW create DATABASE test") });
 
-  sql_print_information("Field cnt %u", connection.get_field_count());
+  sql_print_information("Field cnt %u", connection->get_field_count());
 
-  Ed_result_set *result= connection.use_result_set();
+  Ed_result_set *result= connection->use_result_set();
   List<Ed_row>& rows= *result;
   for (uint32 i= 0; i < result->size(); ++i)
   {
