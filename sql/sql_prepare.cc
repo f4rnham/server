@@ -4244,6 +4244,13 @@ bool Ed_connection::execute_direct(Server_runnable *server_runnable)
   */
   m_current_rset= m_rsets;
 
+  // FIXME - Farnham
+  // Check for non-freed explain in ~Prepared_statement?
+  // Replace with log_slow_statement?
+  // https://mariadb.atlassian.net/browse/MDEV-7095
+  // https://mariadb.atlassian.net/browse/MDEV-7096
+  delete_explain_query(stmt.lex);
+
   DBUG_RETURN(rc);
 }
 
