@@ -1712,7 +1712,16 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
 
       general_log_print(thd, command, "Log: '%s'  Pos: %ld", log_ident,
                         (long)pos);
+
+      // FIXME - Farnham
+      // Remove log
+      sql_print_information("Send start");
+
       mysql_binlog_send(thd, log_ident, pos, flags);
+
+      // FIXME - Farnham
+      // Remove log
+      sql_print_information("Send end");
 
       unregister_slave(thd, 1, 1);
       /* Fake COM_QUIT -- if we get here, the thread needs to terminate */

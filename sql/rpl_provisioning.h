@@ -1,4 +1,5 @@
 // FIXME - Farnham header
+// Debug only sql_print_information all around
 
 #pragma once
 
@@ -19,10 +20,10 @@ class provisioning_send_info
     List of discovered databases for provisioning, entries from this list
     are removed after they are processed
   */
-  List<char> databases;
+  List<LEX_STRING> databases;
   /*
     List of discovered tables for currently provisioned database (first in
-    'databases' list)
+    <code>databases</code> list)
   */
   List<char> *tables;
 
@@ -40,8 +41,6 @@ private:
   // Initialization functions
   bool build_database_list();
   bool build_table_list();
-
-  void clear_tables_list();
 
   void ed_connection_test();
   int8 send_table_data();

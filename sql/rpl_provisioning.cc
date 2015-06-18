@@ -14,41 +14,25 @@ provisioning_send_info::provisioning_send_info(THD *thd_arg)
   ed_connection_test();
 
   DBUG_ASSERT(!build_database_list());
-
-  if (!databases.is_empty())
-    DBUG_ASSERT(!build_table_list());
 }
 
 provisioning_send_info::~provisioning_send_info()
 {
   delete connection;
 
-  List_iterator_fast<char> it(databases);
-  void* name;
-  while (name= it.next_fast())
-    // Names (char*) were allocated by strdup
-    free(name);
+  // FIXME - Farnham
+  // <code>databases</code> were allocated by thd mem root - how does it work?
 
-  clear_tables_list();
-}
+  if (tables)
+  {
+    List_iterator_fast<char> it(*tables);
+    void* name;
+    while (name= it.next_fast())
+      // Names (char*) were allocated by strdup
+      free(name);
 
-/**
-  Clears list of discovered tables for currently provisioned database
- */
-
-void provisioning_send_info::clear_tables_list()
-{
-  if (!tables)
-    return;
-
-  List_iterator_fast<char> it(*tables);
-  void* name;
-  while (name= it.next_fast())
-    // Names (char*) were allocated by strdup
-    free(name);
-
-  delete tables;
-  tables= NULL;
+    delete tables;
+  }
 }
 
 bool provisioning_send_info::build_database_list()
@@ -79,8 +63,20 @@ bool provisioning_send_info::build_database_list()
     // in case of internal inconsistency
     DBUG_ASSERT(row->size() == 1);
 
-    sql_print_information("Discovered database %s", row->get_column(0)->str);
-    databases.push_back(strdup(row->get_column(0)->str));
+    Ed_column const *column= row->get_column(0);
+
+    // Skip test run, mysql, information_schema and performance_schema
+    // databases
+    if (!strcmp(column->str, "mtr") ||
+        !strcmp(column->str, INFORMATION_SCHEMA_NAME.str) ||
+        !strcmp(column->str, PERFORMANCE_SCHEMA_DB_NAME.str) ||
+        !strcmp(column->str, MYSQL_SCHEMA_NAME.str))
+    {
+      continue;
+    }
+
+    sql_print_information("Discovered database %s", column->str);
+    databases.push_back(thd->make_lex_string(column->str, column->length));
   }
 
   return false;
@@ -88,7 +84,7 @@ bool provisioning_send_info::build_database_list()
 
 /**
   Builds list of tables for currently provisioned database - first in
-  'databases' list
+  <code>databases</code> list
  */
 
 bool provisioning_send_info::build_table_list()
@@ -100,8 +96,9 @@ bool provisioning_send_info::build_table_list()
 
   int const max_query_length= sizeof("SHOW TABLES FROM ") + NAME_CHAR_LEN + 1;
   char query[max_query_length];
+  LEX_STRING const *database= databases.head();
   int length= my_snprintf(query, max_query_length,
-                          "SHOW TABLES FROM %s", databases.head());
+                          "SHOW TABLES FROM %s", database->str);
 
   if (length < 0 || length >= max_query_length)
   {
@@ -135,8 +132,11 @@ bool provisioning_send_info::build_table_list()
     // in case of internal inconsistency
     DBUG_ASSERT(row->size() == 1);
 
-    sql_print_information("Discovered table %s", row->get_column(0)->str);
-    tables->push_back(strdup(row->get_column(0)->str));
+    Ed_column const *column= row->get_column(0);
+
+    sql_print_information("Discovered table %s.%s", database->str,
+                          column->str);
+    tables->push_back(strdup(column->str));
   }
 
   return false;
@@ -219,22 +219,36 @@ void provisioning_send_info::ed_connection_test()
   }
 }
 
+/**
+  Sends data from currently provisioned table - first in
+  <code>tables</code> list
+ */
+
 int8 provisioning_send_info::send_table_data()
 {
-  TABLE_LIST tables;
-  tables.init_one_table(STRING_WITH_LEN("test"),
-                        STRING_WITH_LEN("t1"),
-                        NULL, TL_READ);
+  // Ensure that tables were prepared
+  DBUG_ASSERT(tables && !tables->is_empty());
+
+  sql_print_information("send_table_data() - %s.%s", databases.head()->str,
+                        tables->head());
+
+  TABLE_LIST table_list;
+  table_list.init_one_table(databases.head()->str, databases.head()->length,
+                            tables->head(), strlen(tables->head()),
+                            NULL, TL_READ);
 
   // FIXME - Farnham
-  // Check for permissions and system tables
+  // Check for permissions
 
-  if (open_and_lock_tables(thd, &tables, FALSE, 0))
+  if (open_and_lock_tables(thd, &table_list, FALSE, 0))
     return 0;
 
-  TABLE *table= tables.table;
+  TABLE *table= table_list.table;
   handler *hdl= table->file;
   DBUG_ASSERT(hdl);
+
+  // FIXME - Farnham
+  // Send table meta data
 
   hdl->prepare_range_scan(NULL, NULL);
   hdl->ha_index_init(0, true);
@@ -247,24 +261,23 @@ int8 provisioning_send_info::send_table_data()
                                                    table->s->table_map_id,
                                                    false);
 
+  Write_rows_log_event evt= Write_rows_log_event(thd, table,
+                                                 table->s->table_map_id,
+                                                 &table->s->all_set, false);
+  evt.set_flags(Rows_log_event::STMT_END_F);
+
   do
   {
-    Write_rows_log_event evt= Write_rows_log_event(thd, table,
-                                                   table->s->table_map_id,
-                                                   &table->s->all_set, false);
-
     size_t len= pack_row(table, &table->s->all_set, buff2, table->record[0]);
     DBUG_ASSERT(len < 4 * 512);
     evt.add_row_data(buff2, len);
-    evt.set_flags(Rows_log_event::STMT_END_F);
-
-    send_event(map_evt);
-    send_event(evt);
-
-    sql_print_information("Dumped one row");
-  } while (hdl->read_range_next() == 0);
+  }
+  while (hdl->read_range_next() == 0);
 
   hdl->ha_index_end();
+
+  send_event(map_evt);
+  send_event(evt);
 
   net_flush(&thd->net);
 
@@ -274,6 +287,13 @@ int8 provisioning_send_info::send_table_data()
   // If they are not released, cleanup drop table statement from test
   // causes deadlock during meta data locking
   thd->mdl_context.release_transactional_locks();
+
+  // FIXME - Farnham
+  // Don't send whole table at once
+  
+  // Continue with next table
+  free(tables->pop());
+
   return 0;
 }
 
@@ -292,5 +312,40 @@ int8 provisioning_send_info::send_provisioning_data()
   DBUG_EXECUTE_IF("provisioning_hardcoded_data_test",
                   return send_provisioning_data_hardcoded_data_test(););
 
-  return send_table_data();
+  // No more data to send
+  if (databases.is_empty())
+    return 0;
+
+  // If no database is initialized for provisioning, do it - fetch list of
+  // user tables from it
+  if (!tables)
+  {
+    if (build_table_list())
+      return 1;
+
+    DBUG_ASSERT(tables);
+  }
+
+  // Send data from first table in list
+  if (!tables->is_empty())
+  {
+    if (send_table_data())
+      return 1;
+  }
+
+  // All tables were sent, next run of this function will continue with next
+  // database
+  if (tables->is_empty())
+  {
+    delete tables;
+    tables= NULL;
+
+    // FIXME - Farnham
+    // Deletion of LEX_STRING allocated by thd
+    databases.pop();
+  }
+
+  // There may be more tables or databases waiting, run this function at least
+  // one more time
+  return -1;
 }
