@@ -7,13 +7,11 @@
 
 provisioning_send_info::provisioning_send_info(THD *thd_arg)
   : thd(thd_arg)
-  , tables(NULL)
+  , phase(PROV_PHASE_INIT)
 {
   connection= new Ed_connection(thd);
 
   ed_connection_test();
-
-  DBUG_ASSERT(!build_database_list());
 }
 
 provisioning_send_info::~provisioning_send_info()
@@ -23,16 +21,11 @@ provisioning_send_info::~provisioning_send_info()
   // FIXME - Farnham
   // <code>databases</code> were allocated by thd mem root - how does it work?
 
-  if (tables)
-  {
-    List_iterator_fast<char> it(*tables);
-    void* name;
-    while (name= it.next_fast())
-      // Names (char*) were allocated by strdup
-      free(name);
-
-    delete tables;
-  }
+  List_iterator_fast<char> it(tables);
+  void* name;
+  while (name= it.next_fast())
+    // Names (char*) were allocated by strdup
+    free(name);
 }
 
 bool provisioning_send_info::build_database_list()
@@ -89,8 +82,9 @@ bool provisioning_send_info::build_database_list()
 
 bool provisioning_send_info::build_table_list()
 {
-  // No database is currently provisioned
-  DBUG_ASSERT(tables == NULL);
+  // If tables for some database were fetched previously, they were all
+  // processed (removed from list)
+  DBUG_ASSERT(tables.is_empty());
   // There is at least one database left for provisioning
   DBUG_ASSERT(databases.elements > 0);
 
@@ -110,7 +104,6 @@ bool provisioning_send_info::build_table_list()
     return true;
   }
 
-  tables= new List<char>();
   Ed_result_set *result= connection->use_result_set();
 
   // We are expecting exactly one result set with one column,
@@ -136,7 +129,7 @@ bool provisioning_send_info::build_table_list()
 
     sql_print_information("Discovered table %s.%s", database->str,
                           column->str);
-    tables->push_back(strdup(column->str));
+    tables.push_back(strdup(column->str));
   }
 
   return false;
@@ -227,14 +220,14 @@ void provisioning_send_info::ed_connection_test()
 int8 provisioning_send_info::send_table_data()
 {
   // Ensure that tables were prepared
-  DBUG_ASSERT(tables && !tables->is_empty());
+  DBUG_ASSERT(!tables.is_empty());
 
   sql_print_information("send_table_data() - %s.%s", databases.head()->str,
-                        tables->head());
+                        tables.head());
 
   TABLE_LIST table_list;
   table_list.init_one_table(databases.head()->str, databases.head()->length,
-                            tables->head(), strlen(tables->head()),
+                            tables.head(), strlen(tables.head()),
                             NULL, TL_READ);
 
   // FIXME - Farnham
@@ -290,9 +283,9 @@ int8 provisioning_send_info::send_table_data()
 
   // FIXME - Farnham
   // Don't send whole table at once
-  
+
   // Continue with next table
-  free(tables->pop());
+  free(tables.pop());
 
   return 0;
 }
@@ -312,37 +305,63 @@ int8 provisioning_send_info::send_provisioning_data()
   DBUG_EXECUTE_IF("provisioning_hardcoded_data_test",
                   return send_provisioning_data_hardcoded_data_test(););
 
-  // No more data to send
-  if (databases.is_empty())
-    return 0;
-
-  // If no database is initialized for provisioning, do it - fetch list of
-  // user tables from it
-  if (!tables)
+  switch (phase)
   {
-    if (build_table_list())
-      return 1;
+    case PROV_PHASE_INIT:
+    {
+      if (build_database_list())
+        return 1;
 
-    DBUG_ASSERT(tables);
-  }
+      phase= PROV_PHASE_DB_INIT;
+      break;
+    }
+    case PROV_PHASE_DB_INIT:
+    {
+      // No more data to send
+      if (databases.is_empty())
+        return 0;
 
-  // Send data from first table in list
-  if (!tables->is_empty())
-  {
-    if (send_table_data())
-      return 1;
-  }
+      if (build_table_list())
+        return 1;
 
-  // All tables were sent, next run of this function will continue with next
-  // database
-  if (tables->is_empty())
-  {
-    delete tables;
-    tables= NULL;
+      phase= PROV_PHASE_TABLES;
+      break;
+    }
+    case PROV_PHASE_TABLES:
+    {
+      // No more tables to process for this DB, move to next step
+      if (tables.is_empty())
+      {
+        phase= PROV_PHASE_TRIGGERS;
+        break;
+      }
 
-    // FIXME - Farnham
-    // Deletion of LEX_STRING allocated by thd
-    databases.pop();
+      if (send_table_data())
+        return 1;
+
+      break;
+    }
+    case PROV_PHASE_TRIGGERS:
+    {
+      // NYI
+      phase= PROV_PHASE_EVENTS;
+      break;
+    }
+    case PROV_PHASE_EVENTS:
+    {
+      // NYI
+      phase= PROV_PHASE_ROUTINES;
+      break;
+    }
+    case PROV_PHASE_ROUTINES:
+    {
+      // NYI - last phase, try to work on next DB
+      phase= PROV_PHASE_DB_INIT;
+      // FIXME - Farnham
+      // Deletion of LEX_STRING allocated by thd
+      databases.pop();
+      break;
+    }
   }
 
   // There may be more tables or databases waiting, run this function at least
