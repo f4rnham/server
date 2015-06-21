@@ -48,6 +48,9 @@ enum provisioning_phase
 
   Entries from both mentioned lists are removed after their processing
   is done => fully processed entries are removed from those lists
+
+  FIXME - Farnham
+  Test need for quoting / escaping of database / table names
 */
 
 class provisioning_send_info
@@ -84,5 +87,7 @@ private:
   bool build_table_list();
 
   void ed_connection_test();
+
+  bool send_create_database();
   int8 send_table_data();
 };

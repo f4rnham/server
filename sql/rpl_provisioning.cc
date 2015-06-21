@@ -31,9 +31,7 @@ provisioning_send_info::~provisioning_send_info()
 bool provisioning_send_info::build_database_list()
 {
   if (connection->execute_direct({ C_STRING_WITH_LEN("SHOW DATABASES") }))
-  {
     return true;
-  }
 
   Ed_result_set *result= connection->use_result_set();
 
@@ -88,21 +86,14 @@ bool provisioning_send_info::build_table_list()
   // There is at least one database left for provisioning
   DBUG_ASSERT(databases.elements > 0);
 
-  int const max_query_length= sizeof("SHOW TABLES FROM ") + NAME_CHAR_LEN + 1;
-  char query[max_query_length];
+  DYNAMIC_STRING query;
   LEX_STRING const *database= databases.head();
-  int length= my_snprintf(query, max_query_length,
-                          "SHOW TABLES FROM %s", database->str);
 
-  if (length < 0 || length >= max_query_length)
-  {
-    return true;
-  }
+  init_dynamic_string(&query, "SHOW TABLES FROM ", 0, 0);
+  dynstr_append(&query, database->str);
 
-  if (connection->execute_direct({ query, length }))
-  {
+  if (connection->execute_direct({ query.str, query.length }))
     return true;
-  }
 
   Ed_result_set *result= connection->use_result_set();
 
@@ -213,8 +204,63 @@ void provisioning_send_info::ed_connection_test()
 }
 
 /**
+  Creates and sends 'CREATE DATABASE' <code>Query_log_event</code> for
+  first database in <code>databases</code> list
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::send_create_database()
+{
+  DBUG_ASSERT(!databases.is_empty());
+
+  DYNAMIC_STRING query;
+  LEX_STRING const *database= databases.head();
+
+  init_dynamic_string(&query, "SHOW CREATE DATABASE ", 0, 0);
+  dynstr_append(&query, database->str);
+
+  if (connection->execute_direct({ query.str, query.length }))
+    return true;
+
+  Ed_result_set *result= connection->use_result_set();
+
+  // We are expecting exactly one result set with one row and two columns,
+  // in any other case, something went wrong
+  if (!result || result->size() != 1 || result->get_field_count() != 2 ||
+      connection->has_next_result())
+  {
+    return true;
+  }
+
+  
+  List<Ed_row>& rows= *result;
+  // First column is name of database, second is create query
+  Ed_column const *column= rows.head()->get_column(1);
+
+  sql_print_information("Got create database query '%s'", column->str);
+
+  // FIXME - Farnham
+  // Double check exact meaning of all constructor parameters
+  Query_log_event evt(thd, column->str, column->length,
+                      false, // using_trans
+                      true,  // direct
+                      true,  // suppress_use
+                      0);    // error
+
+  send_event(evt);
+  net_flush(&thd->net);
+
+  return false;
+}
+
+/**
   Sends data from currently provisioned table - first in
   <code>tables</code> list
+
+  @return 0    - ok
+          else - error
  */
 
 int8 provisioning_send_info::send_table_data()
@@ -321,7 +367,7 @@ int8 provisioning_send_info::send_provisioning_data()
       if (databases.is_empty())
         return 0;
 
-      if (build_table_list())
+      if (send_create_database() || build_table_list())
         return 1;
 
       phase= PROV_PHASE_TABLES;
