@@ -218,6 +218,8 @@ bool provisioning_send_info::send_create_database()
   DYNAMIC_STRING query;
   LEX_STRING const *database= databases.head();
 
+  // FIXME - Farnham
+  // Quoting / escaping
   init_dynamic_string(&query, "SHOW CREATE DATABASE ", 0, 0);
   dynstr_append(&query, database->str);
 
@@ -239,7 +241,8 @@ bool provisioning_send_info::send_create_database()
   // First column is name of database, second is create query
   Ed_column const *column= rows.head()->get_column(1);
 
-  sql_print_information("Got create database query '%s'", column->str);
+  sql_print_information("Got create database query for %s\n%s",
+                        database->str, column->str);
 
   // FIXME - Farnham
   // Double check exact meaning of all constructor parameters
@@ -256,11 +259,77 @@ bool provisioning_send_info::send_create_database()
 }
 
 /**
+  Creates and sends 'CREATE TABLE' <code>Query_log_event</code> for
+  first table in <code>tables</code> list
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::send_create_table()
+{
+  DBUG_ASSERT(!tables.is_empty());
+
+  DYNAMIC_STRING query;
+  LEX_STRING const *database= databases.head();
+  char const *table= tables.head();
+
+  // FIXME - Farnham
+  // Quoting / escaping
+  init_dynamic_string(&query, "SHOW CREATE TABLE ", 0, 0);
+  dynstr_append(&query, database->str);
+  dynstr_append(&query, ".");
+  dynstr_append(&query, table);
+
+  if (connection->execute_direct({ query.str, query.length }))
+    return true;
+
+  Ed_result_set *result= connection->use_result_set();
+
+  // We are expecting exactly one result set with one row and two columns,
+  // in any other case, something went wrong
+  if (!result || result->size() != 1 || result->get_field_count() != 2 ||
+      connection->has_next_result())
+  {
+    return true;
+  }
+
+  List<Ed_row>& rows= *result;
+  // First column is name of table, second is create query
+  Ed_column const *column= rows.head()->get_column(1);
+
+  sql_print_information("Got create table query for %s.%s\n%s",
+                        database->str, table, column->str);
+
+
+  // Set database, Query_log_event uses it for generation of use statement
+  char *old_db= thd->db;
+  size_t old_db_length= thd->db_length;
+  thd->reset_db(database->str, database->length);
+
+  // FIXME - Farnham
+  // Double check exact meaning of all constructor parameters
+  Query_log_event evt(thd, column->str, column->length,
+                      false, // using_trans
+                      true,  // direct
+                      false, // suppress_use
+                      0);    // error
+
+  send_event(evt);
+
+  thd->reset_db(old_db, old_db_length);
+  net_flush(&thd->net);
+
+  return false;
+}
+
+/**
   Sends data from currently provisioned table - first in
   <code>tables</code> list
 
-  @return 0    - ok
-          else - error
+  @return -1 - ok, more data waiting
+           0 - ok, no more data
+           1 - error
  */
 
 int8 provisioning_send_info::send_table_data()
@@ -285,9 +354,6 @@ int8 provisioning_send_info::send_table_data()
   TABLE *table= table_list.table;
   handler *hdl= table->file;
   DBUG_ASSERT(hdl);
-
-  // FIXME - Farnham
-  // Send table meta data
 
   hdl->prepare_range_scan(NULL, NULL);
   hdl->ha_index_init(0, true);
@@ -370,20 +436,39 @@ int8 provisioning_send_info::send_provisioning_data()
       if (send_create_database() || build_table_list())
         return 1;
 
-      phase= PROV_PHASE_TABLES;
+      phase= PROV_PHASE_TABLE_INIT;
       break;
     }
-    case PROV_PHASE_TABLES:
+    case PROV_PHASE_TABLE_INIT:
     {
-      // No more tables to process for this DB, move to next step
+      // No more tables to process for this database, try next
       if (tables.is_empty())
       {
-        phase= PROV_PHASE_TRIGGERS;
+        // FIXME - Farnham
+        // Deletion of LEX_STRING allocated by thd
+        databases.pop();
+
+        phase= PROV_PHASE_DB_INIT;
         break;
       }
 
-      if (send_table_data())
+      if (send_create_table())
         return 1;
+
+      phase= PROV_PHASE_TABLE_DATA;
+      break;
+    }
+    case PROV_PHASE_TABLE_DATA:
+    {
+      int8 res= send_table_data();
+      // Error
+      if (res == 1)
+        return 1;
+      // Ok, no more data - next phase
+      else if (res == 0)
+        phase= PROV_PHASE_TRIGGERS;
+      // else if ( res == -1)
+      //   Ok, more data - no phase change
 
       break;
     }
@@ -401,11 +486,8 @@ int8 provisioning_send_info::send_provisioning_data()
     }
     case PROV_PHASE_ROUTINES:
     {
-      // NYI - last phase, try to work on next DB
-      phase= PROV_PHASE_DB_INIT;
-      // FIXME - Farnham
-      // Deletion of LEX_STRING allocated by thd
-      databases.pop();
+      // NYI - last phase, try to work on next table
+      phase= PROV_PHASE_TABLE_INIT;
       break;
     }
   }

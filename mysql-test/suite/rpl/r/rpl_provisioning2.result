@@ -2,13 +2,7 @@ include/master-slave.inc
 [connection master]
 include/stop_slave.inc
 RESET SLAVE;
-USE test;
-CREATE TABLE test_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test_2 (a int, b int, c int, PRIMARY KEY (a));
-CREATE DATABASE test2;
-USE test2;
-CREATE TABLE test2_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test2_2 (a int, b int, PRIMARY KEY (a));
+DROP DATABASE test;
 RESET MASTER;
 USE test;
 CREATE TABLE test_1 (a int, PRIMARY KEY (a));
@@ -21,8 +15,40 @@ CREATE TABLE test2_1 (a int, PRIMARY KEY (a));
 CREATE TABLE test2_2 (a int, b int, PRIMARY KEY (a));
 INSERT INTO test2_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
-CREATE DATABASE prov_db_test;
 LOAD DATA FROM MASTER;
+SHOW CREATE DATABASE test;
+Database	Create Database
+test	CREATE DATABASE `test` /*!40100 DEFAULT CHARACTER SET latin1 */
+SHOW CREATE DATABASE test2;
+Database	Create Database
+test2	CREATE DATABASE `test2` /*!40100 DEFAULT CHARACTER SET latin1 */
+SHOW CREATE TABLE test.test_1;
+Table	Create Table
+test_1	CREATE TABLE `test_1` (
+  `a` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE TABLE test.test_2;
+Table	Create Table
+test_2	CREATE TABLE `test_2` (
+  `a` int(11) NOT NULL DEFAULT '0',
+  `b` int(11) DEFAULT NULL,
+  `c` int(11) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE TABLE test2.test2_1;
+Table	Create Table
+test2_1	CREATE TABLE `test2_1` (
+  `a` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE TABLE test2.test2_2;
+Table	Create Table
+test2_2	CREATE TABLE `test2_2` (
+  `a` int(11) NOT NULL DEFAULT '0',
+  `b` int(11) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
 SELECT * FROM test.test_1 ORDER BY a;
 a
 1
@@ -49,11 +75,7 @@ a	b
 2	2
 3	3
 4	4
-SHOW CREATE DATABASE prov_db_test;
-Database	Create Database
-prov_db_test	CREATE DATABASE `prov_db_test` /*!40100 DEFAULT CHARACTER SET latin1 */
 DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP DATABASE test2;
-DROP DATABASE prov_db_test;
 include/rpl_end.inc

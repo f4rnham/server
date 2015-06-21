@@ -24,11 +24,13 @@ enum provisioning_phase
                            // Executed for each database
                            // Processed during one tick
 
-  PROV_PHASE_TABLES,       // Table creation + data
+  PROV_PHASE_TABLE_INIT,   // Table creation
                            // Executed for each table
-                           // Processing of single table can be split into
-                           // multiple ticks for large tables - state is
-                           // stored in NYI
+
+  PROV_PHASE_TABLE_DATA,   // Table row data
+                           // Executed for each table
+                           // Sending of row data can be split into multiple
+                           // ticks for large tables - state is stored in NYI
 
   PROV_PHASE_TRIGGERS,     // NYI
 
@@ -89,5 +91,7 @@ private:
   void ed_connection_test();
 
   bool send_create_database();
+  bool send_create_table();
+
   int8 send_table_data();
 };

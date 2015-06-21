@@ -1,24 +1,17 @@
 # Generic / temporary test for MDEV-7502 Automatic provisioning of slave
-# Tested functionality of LOAD DATA FROM MASTER - transfers data from master
-# from user created tables and databases to tables and databases pre-created on slave
+# Tested functionality of LOAD DATA FROM MASTER - transfer of table and
+# database structures + table rows
 
 --source include/master-slave.inc
 
-# Prepare master with table and data and slave with table
 --connection slave
 --source include/stop_slave.inc
 RESET SLAVE;
 
-# Create tables and databases on slave
-USE test;
-CREATE TABLE test_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test_2 (a int, b int, c int, PRIMARY KEY (a));
-CREATE DATABASE test2;
-USE test2;
-CREATE TABLE test2_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test2_2 (a int, b int, PRIMARY KEY (a));
+# Drop pre-created database 'test' it will be provisioned from master
+DROP DATABASE test;
 
-# Create same tables on master + fill them with data
+# Create databases and tables on master + fill them with data
 --connection master
 RESET MASTER;
 
@@ -37,9 +30,6 @@ CREATE TABLE test2_2 (a int, b int, PRIMARY KEY (a));
 INSERT INTO test2_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 
-# Test if this database will appear on slave
-CREATE DATABASE prov_db_test;
-
 # Start our pseudo replication - slave will start recieving data from master
 --connection slave
 LOAD DATA FROM MASTER;
@@ -47,19 +37,24 @@ LOAD DATA FROM MASTER;
 # Give master some time to send all data to slave - needs to be done better
 sleep 1;
 
+# Check if database and table structures were transferred
+SHOW CREATE DATABASE test;
+SHOW CREATE DATABASE test2;
+SHOW CREATE TABLE test.test_1;
+SHOW CREATE TABLE test.test_2;
+SHOW CREATE TABLE test2.test2_1;
+SHOW CREATE TABLE test2.test2_2;
+
+# Check if row data were transferred
 SELECT * FROM test.test_1 ORDER BY a;
 SELECT * FROM test.test_2 ORDER BY a;
 SELECT * FROM test2.test2_1 ORDER BY a;
 SELECT * FROM test2.test2_2 ORDER BY a;
-
-# Check if prov_db_test was sent to slave
-SHOW CREATE DATABASE prov_db_test;
 
 # Cleanup
 --connection master
 DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP DATABASE test2;
-DROP DATABASE prov_db_test;
 
 --source include/rpl_end.inc
