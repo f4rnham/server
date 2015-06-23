@@ -1,13 +1,19 @@
-// FIXME - Farnham header
+// FIXME - Farnham
+// Header
+// Memory allocations - usage of my_* functions
 
 #include "rpl_provisioning.h"
 #include "log_event.h"
 #include "sql_prepare.h"
 #include "sql_base.h"
+#include "key.h"
 
 provisioning_send_info::provisioning_send_info(THD *thd_arg)
   : thd(thd_arg)
   , phase(PROV_PHASE_INIT)
+  , row_batch_end(NULL)
+  , error(0)
+  , error_text(NULL)
 {
   connection= new Ed_connection(thd);
 
@@ -26,6 +32,13 @@ provisioning_send_info::~provisioning_send_info()
   while (name= it.next_fast())
     // Names (char*) were allocated by strdup
     free(name);
+
+  // If error occurred, this may not be freed
+  if (row_batch_end)
+  {
+    delete[] row_batch_end->key;
+    delete row_batch_end;
+  }
 }
 
 bool provisioning_send_info::build_database_list()
@@ -355,51 +368,127 @@ int8 provisioning_send_info::send_table_data()
   handler *hdl= table->file;
   DBUG_ASSERT(hdl);
 
-  hdl->prepare_range_scan(NULL, NULL);
-  hdl->ha_index_init(0, true);
-  DBUG_ASSERT(hdl->read_range_first(0, 0, false, true) == 0);
-
-  // Fix buffer size
-  uint8 buff2[4 * 512];
-
-  Table_map_log_event map_evt= Table_map_log_event(thd, table,
-                                                   table->s->table_map_id,
-                                                   false);
-
-  Write_rows_log_event evt= Write_rows_log_event(thd, table,
-                                                 table->s->table_map_id,
-                                                 &table->s->all_set, false);
-  evt.set_flags(Rows_log_event::STMT_END_F);
-
-  do
+  // Initialize scan from last remembered position - can be NULL but it is
+  // valid function argument
+  if ((error= hdl->prepare_range_scan(row_batch_end, NULL)) != 0)
   {
-    size_t len= pack_row(table, &table->s->all_set, buff2, table->record[0]);
-    DBUG_ASSERT(len < 4 * 512);
-    evt.add_row_data(buff2, len);
+    error_text= "Range scan preparation failed";
+    return 1;
   }
-  while (hdl->read_range_next() == 0);
 
-  hdl->ha_index_end();
+  // FIXME - Farnham
+  // Check for index existence
+  if ((error= hdl->ha_index_init(0, true)) != 0)
+  {
+    error_text= "Index initialization failed";
+    return 1;
+  }
 
-  send_event(map_evt);
-  send_event(evt);
+  if ((error= hdl->read_range_first(row_batch_end, NULL, false, true)) == 0)
+  {
+    uint32 packed_rows= 0;
+    // FIXME - Farnham
+    // Fix buffer size
+    uint8 buff2[4 * 512];
 
-  net_flush(&thd->net);
+    Table_map_log_event map_evt= Table_map_log_event(thd, table,
+                                                     table->s->table_map_id,
+                                                     false);
+
+    Write_rows_log_event evt= Write_rows_log_event(thd, table,
+                                                   table->s->table_map_id,
+                                                   &table->s->all_set, false);
+    evt.set_flags(Rows_log_event::STMT_END_F);
+
+    do
+    {
+      size_t len= pack_row(table, &table->s->all_set, buff2, table->record[0]);
+      DBUG_ASSERT(len < 4 * 512);
+
+      if (error= evt.add_row_data(buff2, len))
+      {
+        error_text= "Failed to add row data to event";
+        return 1;
+      }
+
+      ++packed_rows;
+    }
+    while (packed_rows <= PROV_ROW_BATCH_SIZE &&
+           (error= hdl->read_range_next()) == 0);
+
+    if (error && error != HA_ERR_END_OF_FILE)
+    {
+      return 1;
+    }
+
+    if (packed_rows > 0)
+    {
+      send_event(map_evt);
+      send_event(evt);
+    }
+
+    // Read one more row and store its key for next call
+    // On this place, variable error can be only 0 or HA_ERR_END_OF_FILE
+    if (error != HA_ERR_END_OF_FILE && (error= hdl->read_range_next()) == 0)
+    {
+      // First time saving key for this table, allocate structure for it
+      if (!row_batch_end)
+      {
+        row_batch_end= new key_range();
+        row_batch_end->length= table->key_info->key_length;
+        row_batch_end->keypart_map= HA_WHOLE_KEY;
+        row_batch_end->flag= HA_READ_KEY_OR_NEXT;
+        row_batch_end->key= new uchar[row_batch_end->length];
+      }
+
+      key_copy(const_cast<uchar*>(row_batch_end->key), table->record[0],
+               table->key_info, table->key_info->key_length);
+    }
+  }
+
+  // Ok, more data - default result
+  int8 result= -1;
+
+  // EOF error means, that we processed all rows in table, shift to next
+  // table and ignore it
+  if (error == HA_ERR_END_OF_FILE)
+  {
+    error= 0;
+    free(tables.pop());
+
+    // Free key data for current table
+    if (row_batch_end)
+    {
+      delete[] row_batch_end->key;
+      delete row_batch_end;
+      row_batch_end= NULL;
+    }
+
+    // Ok, no more data
+    result= 0;
+  }
+  // Real error occurred
+  else if (error)
+  {
+    error_text= "Error occurred while sending row data";
+    return 1;
+  }
+
+  if ((error= hdl->ha_index_end()) != 0)
+  {
+    error_text= "ha_index_end() call failed";
+    return 1;
+  }
 
   close_thread_tables(thd);
+
   // FIXME - Farnham
   // Where were these locks acquired? Can we release them here?
   // If they are not released, cleanup drop table statement from test
   // causes deadlock during meta data locking
   thd->mdl_context.release_transactional_locks();
 
-  // FIXME - Farnham
-  // Don't send whole table at once
-
-  // Continue with next table
-  free(tables.pop());
-
-  return 0;
+  return result;
 }
 
 /**

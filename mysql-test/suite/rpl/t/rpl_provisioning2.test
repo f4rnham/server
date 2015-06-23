@@ -22,6 +22,20 @@ CREATE TABLE test_2 (a int, b int, c int, PRIMARY KEY (a));
 INSERT INTO test_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
 
+# Create table with 100 rows
+CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a));
+DELIMITER |;
+CREATE PROCEDURE fill_big_table()
+BEGIN
+  DECLARE v1 INT DEFAULT 100;
+  WHILE v1 > 0 DO
+    INSERT big_table VALUES (NULL);
+    SET v1 = v1 - 1;
+  END WHILE;
+END|
+DELIMITER ;|
+CALL fill_big_table();
+
 CREATE DATABASE test2;
 USE test2;
 CREATE TABLE test2_1 (a int, PRIMARY KEY (a));
@@ -44,17 +58,22 @@ SHOW CREATE TABLE test.test_1;
 SHOW CREATE TABLE test.test_2;
 SHOW CREATE TABLE test2.test2_1;
 SHOW CREATE TABLE test2.test2_2;
+SHOW CREATE TABLE test.big_table;
 
 # Check if row data were transferred
 SELECT * FROM test.test_1 ORDER BY a;
 SELECT * FROM test.test_2 ORDER BY a;
 SELECT * FROM test2.test2_1 ORDER BY a;
 SELECT * FROM test2.test2_2 ORDER BY a;
+SELECT * FROM test.big_table ORDER BY a;
 
 # Cleanup
 --connection master
 DROP TABLE test.test_1;
 DROP TABLE test.test_2;
+DROP TABLE test.big_table;
 DROP DATABASE test2;
 
 --source include/rpl_end.inc
+
+DROP PROCEDURE test.fill_big_table;

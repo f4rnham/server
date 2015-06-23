@@ -30,7 +30,8 @@ enum provisioning_phase
   PROV_PHASE_TABLE_DATA,   // Table row data
                            // Executed for each table
                            // Sending of row data can be split into multiple
-                           // ticks for large tables - state is stored in NYI
+                           // ticks for large tables - state is stored in
+                           // <code>row_batch_end</code>
 
   PROV_PHASE_TRIGGERS,     // NYI
 
@@ -38,6 +39,13 @@ enum provisioning_phase
 
   PROV_PHASE_ROUTINES,     // NYI
 };
+
+/*
+  How much rows from table will be sent in one provisioning tick
+  FIXME - Farnham
+  Dynamic value
+*/
+#define PROV_ROW_BATCH_SIZE 5
 
 /*
   Helper structure, used to store info about state of ongoing provisioning
@@ -70,8 +78,32 @@ class provisioning_send_info
     <code>databases</code> list)
   */
   List<char> tables;
+  /*
+    Key of next row to be dumped and sent to slave
+    NULL if start from beginning
+  */
+  key_range *row_batch_end;
 
   provisioning_phase phase;
+
+public:
+  /*
+    Stores error code which occurred in functions defined outside of
+    provisioning code
+
+    If <code>send_table_data()</code> returns 1 (error) either
+    <code>error</code> or <code>error_text</code> contains better more 
+    information
+  */
+  int error;
+  /*
+    Text describing error which occurred, usually in provisioning code
+
+    If <code>send_table_data()</code> returns 1 (error) either
+    <code>error</code> or <code>error_text</code> contains better more
+    information
+  */
+  char const *error_text;
 
 public:
   provisioning_send_info(THD *thd_arg);

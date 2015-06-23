@@ -2562,8 +2562,27 @@ static my_off_t get_binlog_end_pos(binlog_send_info *info,
             //info->should_stop= true;
             info->flags&= ~BINLOG_DUMP_PROVISIONING_MODE;
           }
+          else if (res == 1)
+          {
+            // FIXME - Farnham
+            // Propagate error from provisioning to lower level
+            
+            // When error occurred, at least one better description of error
+            // must be available
+            DBUG_ASSERT(info->provisioning_info->error ||
+                        info->provisioning_info->error_text);
 
-          //return res;
+            sql_print_information("Replication error %u - %s",
+                                  info->provisioning_info->error,
+                                  info->provisioning_info->error_text ?
+                                  info->provisioning_info->error_text :
+                                  "none");
+            return 1;
+          }
+
+          // No error can be set if call succeeded
+          DBUG_ASSERT(!info->provisioning_info->error &&
+                      !info->provisioning_info->error_text);
         }
 
         // Recheck if binlog end position moved while we were sending
