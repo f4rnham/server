@@ -16,8 +16,6 @@ provisioning_send_info::provisioning_send_info(THD *thd_arg)
   , error_text(NULL)
 {
   connection= new Ed_connection(thd);
-
-  ed_connection_test();
 }
 
 provisioning_send_info::~provisioning_send_info()
@@ -166,54 +164,6 @@ int8 provisioning_send_info::send_event(Log_event &evt)
   event_to_packet(evt, packet);
 
   return my_net_write(&thd->net, (uchar*)packet.ptr(), packet.length());
-}
-
-int8 provisioning_send_info::send_provisioning_data_hardcoded_data_test()
-{
-  static int sent= 45;
-
-  if (sent >= 50)
-    return 0;
-
-  ++sent;
-
-  sql_print_information("send %d", sent);
-
-  char query[128];
-  sprintf(query, "INSERT INTO test.t1 VALUES (%d)", sent);
-
-  Query_log_event evt(thd, query, strlen(query), false, true, true, 0);
-
-  send_event(evt);
-  net_flush(&thd->net);
-
-  return -1;
-}
-
-void provisioning_send_info::ed_connection_test()
-{
-  connection->execute_direct({ C_STRING_WITH_LEN("SHOW create DATABASE test") });
-
-  sql_print_information("Field cnt %u", connection->get_field_count());
-
-  Ed_result_set *result= connection->use_result_set();
-  List<Ed_row>& rows= *result;
-  for (uint32 i= 0; i < result->size(); ++i)
-  {
-    sql_print_information("Result %u:", i);
-
-    List_iterator<Ed_row> it(rows);
-    for (uint32 j= 0; j < rows.elements; ++j)
-    {
-      sql_print_information("Row %u:", j);
-
-      Ed_row *row= it++;
-      for (uint32 k= 0; k < row->size(); ++k)
-      {
-        sql_print_information("Column %u: %s", k, row->get_column(k)->str);
-      }
-    }
-  }
 }
 
 /**
@@ -413,7 +363,7 @@ int8 provisioning_send_info::send_table_data()
 
       ++packed_rows;
     }
-    while (packed_rows <= PROV_ROW_BATCH_SIZE &&
+    while (packed_rows < PROV_ROW_BATCH_SIZE &&
            (error= hdl->read_range_next()) == 0);
 
     if (error && error != HA_ERR_END_OF_FILE)
@@ -503,9 +453,6 @@ int8 provisioning_send_info::send_table_data()
 
 int8 provisioning_send_info::send_provisioning_data()
 {
-  DBUG_EXECUTE_IF("provisioning_hardcoded_data_test",
-                  return send_provisioning_data_hardcoded_data_test(););
-
   switch (phase)
   {
     case PROV_PHASE_INIT:

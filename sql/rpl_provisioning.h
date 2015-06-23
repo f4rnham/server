@@ -109,8 +109,6 @@ public:
   provisioning_send_info(THD *thd_arg);
   ~provisioning_send_info();
 
-  int8 send_provisioning_data_hardcoded_data_test();
-
   int8 send_provisioning_data();
 
 private:
@@ -119,8 +117,6 @@ private:
   // Initialization functions
   bool build_database_list();
   bool build_table_list();
-
-  void ed_connection_test();
 
   bool send_create_database();
   bool send_create_table();
