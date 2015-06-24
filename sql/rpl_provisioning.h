@@ -48,6 +48,11 @@ enum provisioning_phase
 #define PROV_ROW_BATCH_SIZE 5
 
 /*
+  Default (minimum) size for row packing buffer - 1KB
+*/
+#define ROW_BUFFER_DEFAULT_SIZE 0x400
+
+/*
   Helper structure, used to store info about state of ongoing provisioning
 
   If we are processing database, it is always first (<code>head()</code>) one
@@ -83,6 +88,13 @@ class provisioning_send_info
     NULL if start from beginning
   */
   key_range *row_batch_end;
+  /*
+    Buffer used for packing of row data
+    Initialized with default size (<code>ROW_BUFFER_DEFAULT_SIZE</code>)
+    and reallocated to larger capacity on demand - size is only increased
+  */
+  void *row_buffer;
+  size_t row_buffer_size;
 
   provisioning_phase phase;
 
@@ -122,4 +134,6 @@ private:
   bool send_create_table();
 
   int8 send_table_data();
+
+  bool prepare_row_buffer(TABLE *table, uchar const *data);
 };

@@ -12,6 +12,8 @@ provisioning_send_info::provisioning_send_info(THD *thd_arg)
   : thd(thd_arg)
   , connection(new Ed_connection(thd))
   , row_batch_end(NULL)
+  , row_buffer(malloc(ROW_BUFFER_DEFAULT_SIZE))
+  , row_buffer_size(ROW_BUFFER_DEFAULT_SIZE)
   , phase(PROV_PHASE_INIT)
   , error(0)
   , error_text(NULL)
@@ -37,6 +39,34 @@ provisioning_send_info::~provisioning_send_info()
     delete[] row_batch_end->key;
     delete row_batch_end;
   }
+
+  free(row_buffer);
+}
+
+/**
+  Prepares row buffer for next row data - if buffer is too small,
+  reallocates it to larger size, otherwise no-op
+
+  FIXME - Farnham
+  Realloc or free + malloc - we don't care about data in buffer
+
+  @return true  - allocation failed
+          false - ok
+ */
+
+bool provisioning_send_info::prepare_row_buffer(TABLE *table,
+                                                uchar const *data)
+{
+  size_t req_size= max_row_length(table, data);
+
+  if (req_size > row_buffer_size)
+  {
+    // Allocate a bit more than we need
+    row_buffer_size= size_t(req_size * 1.1f);
+    row_buffer= realloc(row_buffer, row_buffer_size);
+  }
+
+  return row_buffer ? true : false;
 }
 
 bool provisioning_send_info::build_database_list()
@@ -339,9 +369,6 @@ int8 provisioning_send_info::send_table_data()
   if ((error= hdl->read_range_first(row_batch_end, NULL, false, true)) == 0)
   {
     uint32 packed_rows= 0;
-    // FIXME - Farnham
-    // Fix buffer size
-    uint8 buff2[4 * 512];
 
     Table_map_log_event map_evt= Table_map_log_event(thd, table,
                                                      table->s->table_map_id,
@@ -354,10 +381,16 @@ int8 provisioning_send_info::send_table_data()
 
     do
     {
-      size_t len= pack_row(table, &table->s->all_set, buff2, table->record[0]);
-      DBUG_ASSERT(len < 4 * 512);
+      if (prepare_row_buffer(table, table->record[0]))
+      {
+        error_text= "Out of memory";
+        return 1;
+      }
 
-      if ((error= evt.add_row_data(buff2, len)) != 0)
+      size_t len= pack_row(table, &table->s->all_set, (uchar*)row_buffer,
+                           table->record[0]);
+
+      if ((error= evt.add_row_data((uchar*)row_buffer, len)) != 0)
       {
         error_text= "Failed to add row data to event";
         return 1;
