@@ -2,6 +2,7 @@
 # Tested functionality of LOAD DATA FROM MASTER - transfer of table and
 # database structures + table rows
 
+--source include/have_binlog_format_mixed_or_row.inc
 --source include/master-slave.inc
 
 --connection slave

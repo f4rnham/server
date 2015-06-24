@@ -13,8 +13,6 @@ show plugin;
 --error ER_PARSE_ERROR
 load table t1 from master;
 --error ER_PARSE_ERROR
-load data from master;
---error ER_PARSE_ERROR
 SHOW INNODB STATUS;
 --error ER_PARSE_ERROR
 create table t1 (t6 timestamp) type=myisam;

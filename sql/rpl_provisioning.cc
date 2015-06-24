@@ -147,6 +147,8 @@ void event_to_packet(Log_event &evt, String &packet)
 
   DBUG_ASSERT(!evt.write(&buffer));
 
+  reinit_io_cache(&buffer, READ_CACHE, 0, false, false);
+
   packet.set("\0", 1, &my_charset_bin);
   DBUG_ASSERT(!packet.append(&buffer, buffer.write_pos - buffer.buffer));
 
