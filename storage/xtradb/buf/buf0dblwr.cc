@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1995, 2014, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2013, 2014, SkySQL Ab. All Rights Reserved.
+Copyright (c) 2013, 2015, MariaDB Corporation. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -391,11 +391,11 @@ buf_dblwr_init_or_load_pages(
 	doublewrite = read_buf + TRX_SYS_DOUBLEWRITE;
 
 	if (mach_read_from_4(read_buf + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION) != 0) {
-		fil_space_decrypt((ulint)TRX_SYS_SPACE,
-				  read_buf,
-				  UNIV_PAGE_SIZE, /* page size */
-				  read_buf + UNIV_PAGE_SIZE);
-		doublewrite = read_buf + UNIV_PAGE_SIZE + TRX_SYS_DOUBLEWRITE;
+		byte* tmp = fil_space_decrypt((ulint)TRX_SYS_SPACE,
+						read_buf + UNIV_PAGE_SIZE,
+						UNIV_PAGE_SIZE, /* page size */
+						read_buf);
+		doublewrite = tmp + TRX_SYS_DOUBLEWRITE;
 	}
 
 	if (mach_read_from_4(doublewrite + TRX_SYS_DOUBLEWRITE_MAGIC)
@@ -743,6 +743,14 @@ buf_dblwr_check_page_lsn(
 /*=====================*/
 	const page_t*	page)		/*!< in: page to check */
 {
+	ibool page_compressed = (mach_read_from_2(page+FIL_PAGE_TYPE) == FIL_PAGE_PAGE_COMPRESSED);
+	uint key_version = mach_read_from_4(page + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION);
+
+	/* Ignore page compressed or encrypted pages */
+	if (page_compressed || key_version) {
+		return;
+	}
+
 	if (memcmp(page + (FIL_PAGE_LSN + 4),
 		   page + (UNIV_PAGE_SIZE
 			   - FIL_PAGE_END_LSN_OLD_CHKSUM + 4),

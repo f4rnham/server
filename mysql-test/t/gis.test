@@ -5,10 +5,6 @@
 # Spatial objects
 #
 
---disable_warnings
-DROP TABLE IF EXISTS t1, t2, t3, gis_point, gis_line, gis_polygon, gis_multi_point, gis_multi_line, gis_multi_polygon, gis_geometrycollection, gis_geometry;
---enable_warnings
-
 CREATE TABLE gis_point  (fid INTEGER NOT NULL PRIMARY KEY, g POINT);
 CREATE TABLE gis_line  (fid INTEGER NOT NULL PRIMARY KEY, g LINESTRING);
 CREATE TABLE gis_polygon   (fid INTEGER NOT NULL PRIMARY KEY, g POLYGON);
@@ -1449,6 +1445,14 @@ drop table t1;
 #
 SELECT st_astext(ST_Buffer(ST_PolygonFromText('POLYGON((3 5, 2 4, 2 5, 3 5))'), -100));
 
+#
+# MDEV-7779 View definition changes upon creation
+#
+CREATE VIEW v1 AS SELECT POINT(1,1) AS p;
+SHOW CREATE VIEW v1;
+SELECT ASTEXT(p) FROM v1;
+DROP VIEW v1;
+
 --echo End of 5.5 tests
 
 SHOW CREATE TABLE information_schema.geometry_columns;
@@ -1506,4 +1510,11 @@ select ST_Relate(ST_PointFromText('POINT(0 0)'),ST_PointFromText('POINT(0 0)'),'
 select ST_Relate(ST_PointFromText('POINT(0 0)'),ST_PointFromText('POINT(0 0)'),'T*F**F***') AS within;
 select ST_Relate(ST_PointFromText('POINT(0 0)'),ST_PointFromText('POINT(1 1)'),'FF*FF****') as disjoint;
 select ST_Relate(ST_PointFromText('POINT(0 0)'),ST_PointFromText('POINT(0 0)'),'FF*FF****') as disjoint;
+
+
+--echo #
+--echo # MDEV-7528 GIS: Functions return NULL instead of specified -1 for NULL arguments.
+--echo #
+
+select ST_IsRing(NULL);
 

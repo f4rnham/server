@@ -1,6 +1,6 @@
 /*
    Copyright (c) 2000, 2014, Oracle and/or its affiliates.
-   Copyright (c) 2010, 2014, Monty Program Ab.
+   Copyright (c) 2010, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2180,14 +2180,14 @@ Item_field::Item_field(THD *thd, Name_resolution_context *context_arg,
 }
 
 
-Item_field::Item_field(Name_resolution_context *context_arg,
+Item_field::Item_field(THD *thd, Name_resolution_context *context_arg,
                        const char *db_arg,const char *table_name_arg,
                        const char *field_name_arg)
   :Item_ident(context_arg, db_arg,table_name_arg,field_name_arg),
    field(0), item_equal(0), no_const_subst(0),
    have_privileges(0), any_privileges(0)
 {
-  SELECT_LEX *select= current_thd->lex->current_select;
+  SELECT_LEX *select= thd->lex->current_select;
   collation.set(DERIVATION_IMPLICIT);
   if (select && select->parsing_place != IN_HAVING)
       select->select_n_where_fields++;
@@ -7837,6 +7837,7 @@ bool Item_direct_view_ref::fix_fields(THD *thd, Item **reference)
     return TRUE;
   if (view->table && view->table->maybe_null)
     maybe_null= TRUE;
+  set_null_ref_table();
   return FALSE;
 }
 
@@ -9681,13 +9682,30 @@ void Item_ref::update_used_tables()
     (*ref)->update_used_tables();
 }
 
+void Item_direct_view_ref::update_used_tables()
+{
+  set_null_ref_table();
+  Item_direct_ref::update_used_tables();
+}
+
+
 table_map Item_direct_view_ref::used_tables() const
 {
-  return get_depended_from() ?
-         OUTER_REF_TABLE_BIT :
-         ((view->is_merged_derived() || view->merged || !view->table) ?
-          (*ref)->used_tables() :
-          view->table->map);
+  DBUG_ASSERT(null_ref_table);
+
+  if (get_depended_from())
+    return OUTER_REF_TABLE_BIT;
+
+  if (view->is_merged_derived() || view->merged || !view->table)
+  {
+    table_map used= (*ref)->used_tables();
+    return (used ?
+            used :
+            ((null_ref_table != NO_NULL_TABLE) ?
+             null_ref_table->map :
+             (table_map)0 ));
+  }
+  return view->table->map;
 }
 
 table_map Item_direct_view_ref::not_null_tables() const
@@ -9722,7 +9740,15 @@ const char *dbug_print_item(Item *item)
   str.length(0);
   if (!item)
     return "(Item*)NULL";
-  item->print(&str ,QT_ORDINARY);
+  
+  THD *thd= current_thd;
+  ulonglong save_option_bits= thd->variables.option_bits;
+  thd->variables.option_bits &= ~OPTION_QUOTE_SHOW_CREATE;
+
+  item->print(&str ,QT_EXPLAIN);
+
+  thd->variables.option_bits= save_option_bits;
+
   if (str.c_ptr() == buf)
     return buf;
   else

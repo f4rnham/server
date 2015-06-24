@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014 Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2015 Oracle and/or its affiliates.
    Copyright (c) 2009, 2015 MariaDB
 
    This program is free software; you can redistribute it and/or modify
@@ -276,10 +276,8 @@ Item_equal *find_item_equal(COND_EQUAL *cond_equal, Field *field,
 JOIN_TAB *first_depth_first_tab(JOIN* join);
 JOIN_TAB *next_depth_first_tab(JOIN* join, JOIN_TAB* tab);
 
-enum enum_exec_or_opt {WALK_OPTIMIZATION_TABS , WALK_EXECUTION_TABS};
-JOIN_TAB *first_breadth_first_tab(JOIN *join, enum enum_exec_or_opt tabs_kind);
-JOIN_TAB *next_breadth_first_tab(JOIN *join, enum enum_exec_or_opt tabs_kind,
-                                 JOIN_TAB *tab);
+static JOIN_TAB *next_breadth_first_tab(JOIN_TAB *first_top_tab,
+                                        uint n_top_tabs_count, JOIN_TAB *tab);
 static double table_cond_selectivity(JOIN *join, uint idx, JOIN_TAB *s,
                                      table_map rem_tables);
 
@@ -709,9 +707,7 @@ JOIN::prepare(Item ***rref_pointer_array,
   if (!(select_options & OPTION_SETUP_TABLES_DONE) &&
       setup_tables_and_check_access(thd, &select_lex->context, join_list,
                                     tables_list, select_lex->leaf_tables,
-                                    FALSE, SELECT_ACL, SELECT_ACL,
-                                    (thd->lex->sql_command ==
-                                     SQLCOM_UPDATE_MULTI)))
+                                    FALSE, SELECT_ACL, SELECT_ACL, FALSE))
       DBUG_RETURN(-1);
 
   /*
@@ -6493,7 +6489,6 @@ choose_plan(JOIN *join, table_map join_tables)
   DBUG_ENTER("choose_plan");
 
   join->cur_embedding_map= 0;
-  join->cur_dups_producing_tables= 0;
   reset_nj_counters(join, join->join_list);
   qsort2_cmp jtab_sort_func;
 
@@ -7205,12 +7200,13 @@ double JOIN::get_examined_rows()
 {
   double examined_rows;
   double prev_fanout= 1;
-  JOIN_TAB *tab= first_breadth_first_tab(this, WALK_OPTIMIZATION_TABS);
+  JOIN_TAB *tab= first_breadth_first_optimization_tab();
   JOIN_TAB *prev_tab= tab;
 
   examined_rows= tab->get_examined_rows();
 
-  while ((tab= next_breadth_first_tab(this, WALK_OPTIMIZATION_TABS, tab)))
+  while ((tab= next_breadth_first_tab(first_breadth_first_optimization_tab(),
+                                      top_table_access_tabs_count, tab)))
   {
     prev_fanout *= prev_tab->records_read;
     examined_rows+= tab->get_examined_rows() * prev_fanout;
@@ -8204,21 +8200,9 @@ prev_record_reads(POSITION *positions, uint idx, table_map found_ref)
   Enumerate join tabs in breadth-first fashion, including const tables.
 */
 
-JOIN_TAB *first_breadth_first_tab(JOIN *join, enum enum_exec_or_opt tabs_kind)
+static JOIN_TAB *next_breadth_first_tab(JOIN_TAB *first_top_tab,
+                                        uint n_top_tabs_count, JOIN_TAB *tab)
 {
-  /* There's always one (i.e. first) table */
-  return (tabs_kind == WALK_EXECUTION_TABS)? join->join_tab:
-                                             join->table_access_tabs;
-}
-
-
-JOIN_TAB *next_breadth_first_tab(JOIN *join, enum enum_exec_or_opt tabs_kind,
-                                 JOIN_TAB *tab)
-{
-  JOIN_TAB* const first_top_tab= first_breadth_first_tab(join, tabs_kind);
-  const uint n_top_tabs_count= (tabs_kind == WALK_EXECUTION_TABS)? 
-                                  join->top_join_tab_count:
-                                  join->top_table_access_tabs_count;
   if (!tab->bush_root_tab)
   {
     /* We're at top level. Get the next top-level tab */
@@ -8310,7 +8294,8 @@ JOIN_TAB *first_top_level_tab(JOIN *join, enum enum_with_const_tables const_tbls
 
 JOIN_TAB *next_top_level_tab(JOIN *join, JOIN_TAB *tab)
 {
-  tab= next_breadth_first_tab(join, WALK_EXECUTION_TABS, tab);
+  tab= next_breadth_first_tab(join->first_breadth_first_execution_tab(),
+                              join->top_join_tab_count, tab);
   if (tab && tab->bush_root_tab)
     tab= NULL;
   return tab;
@@ -11803,27 +11788,21 @@ void JOIN::cleanup(bool full)
         w/o tables: they don't have some members initialized and
         WALK_OPTIMIZATION_TABS may not work correctly for them.
       */
-      enum enum_exec_or_opt tabs_kind;
-      if (first_breadth_first_tab(this, WALK_OPTIMIZATION_TABS))
-        tabs_kind= WALK_OPTIMIZATION_TABS;
-      else
-        tabs_kind= WALK_EXECUTION_TABS;
       if (table_count)
       {
-        for (tab= first_breadth_first_tab(this, tabs_kind); tab;
-             tab= next_breadth_first_tab(this, tabs_kind, tab))
-        {
+        for (tab= first_breadth_first_optimization_tab(); tab;
+             tab= next_breadth_first_tab(first_breadth_first_optimization_tab(),
+                                         top_table_access_tabs_count, tab))
           tab->cleanup();
-        }
 
-        if (tabs_kind == WALK_OPTIMIZATION_TABS && 
-            first_breadth_first_tab(this, WALK_OPTIMIZATION_TABS) != 
-            first_breadth_first_tab(this, WALK_EXECUTION_TABS))
+        /* We've walked optimization tabs, do execution ones too. */
+        if (first_breadth_first_execution_tab() !=
+            first_breadth_first_optimization_tab())
         {
-          JOIN_TAB *jt= first_breadth_first_tab(this, WALK_EXECUTION_TABS);
-          /* We've walked optimization tabs. do execution ones too */
-          if (jt)
-            jt->cleanup();
+          for (tab= first_breadth_first_execution_tab(); tab;
+               tab= next_breadth_first_tab(first_breadth_first_execution_tab(),
+                                           top_join_tab_count, tab))
+            tab->cleanup();
         }
       }
       cleaned= true;
@@ -12505,14 +12484,14 @@ static bool check_simple_equality(THD *thd, Item *left_item, Item *right_item,
     if (left_copyfl)
     {
       /* left_item_equal of an upper level contains left_item */
-      left_item_equal= new (thd->mem_root) Item_equal(left_item_equal);
+      left_item_equal= new (thd->mem_root) Item_equal(thd, left_item_equal);
       left_item_equal->set_context_field(((Item_field*) left_item));
       cond_equal->current_level.push_back(left_item_equal);
     }
     if (right_copyfl)
     {
       /* right_item_equal of an upper level contains right_item */
-      right_item_equal= new (thd->mem_root) Item_equal(right_item_equal);
+      right_item_equal= new (thd->mem_root) Item_equal(thd, right_item_equal);
       right_item_equal->set_context_field(((Item_field*) right_item));
       cond_equal->current_level.push_back(right_item_equal);
     }
@@ -12540,7 +12519,8 @@ static bool check_simple_equality(THD *thd, Item *left_item, Item *right_item,
       else 
       {
         /* None of the fields was found in multiple equalities */
-        Item_equal *item_equal= new (thd->mem_root) Item_equal(orig_left_item,
+        Item_equal *item_equal= new (thd->mem_root) Item_equal(thd,
+                                                               orig_left_item,
                                                                orig_right_item,
                                                                FALSE);
         item_equal->set_context_field((Item_field*)left_item);
@@ -12599,7 +12579,7 @@ static bool check_simple_equality(THD *thd, Item *left_item, Item *right_item,
                                                field_item->field, &copyfl);
       if (copyfl)
       {
-        item_equal= new (thd->mem_root) Item_equal(item_equal);
+        item_equal= new (thd->mem_root) Item_equal(thd, item_equal);
         cond_equal->current_level.push_back(item_equal);
         item_equal->set_context_field(field_item);
       }
@@ -12614,8 +12594,8 @@ static bool check_simple_equality(THD *thd, Item *left_item, Item *right_item,
       }
       else
       {
-        item_equal= new (thd->mem_root) Item_equal(const_item, orig_field_item,
-                                                   TRUE);
+        item_equal= new (thd->mem_root) Item_equal(thd, const_item,
+                                                   orig_field_item, TRUE);
         item_equal->set_context_field(field_item);
         cond_equal->current_level.push_back(item_equal, thd->mem_root);
       }
@@ -13887,7 +13867,16 @@ change_cond_ref_to_const(THD *thd, I_List<COND_CMP> *save_list,
 	if ((tmp2=new COND_CMP(and_father,func)))
 	  save_list->push_back(tmp2);
       }
-      func->set_cmp_func();
+      /*
+        LIKE can be optimized for BINARY/VARBINARY/BLOB columns, e.g.:
+
+        from: WHERE CONCAT(c1)='const1' AND CONCAT(c1) LIKE 'const2'
+          to: WHERE CONCAT(c1)='const1' AND 'const1' LIKE 'const2'
+
+        So make sure to use set_cmp_func() only for non-LIKE operators.
+      */
+      if (functype != Item_func::LIKE_FUNC)
+        ((Item_bool_rowready_func2*) func)->set_cmp_func();
     }
   }
   else if (can_change_cond_ref_to_const(func, left_item, right_item,
@@ -13910,7 +13899,8 @@ change_cond_ref_to_const(THD *thd, I_List<COND_CMP> *save_list,
 	if ((tmp2=new COND_CMP(and_father,func)))
 	  save_list->push_back(tmp2);
       }
-      func->set_cmp_func();
+      if (functype != Item_func::LIKE_FUNC)
+        ((Item_bool_rowready_func2*) func)->set_cmp_func();
     }
   }
 }
@@ -21050,7 +21040,7 @@ create_sort_index(THD *thd, JOIN *join, ORDER *order,
   filesort_retval= filesort(thd, table, join->sortorder, length,
                             select, filesort_limit, 0,
                             &examined_rows, &found_rows, 
-                            join->explain->ops_tracker.report_sorting());
+                            join->explain->ops_tracker.report_sorting(thd));
   table->sort.found_records= filesort_retval;
   tab->records= found_rows;                     // For SQL_CALC_ROWS
 
@@ -21171,6 +21161,7 @@ remove_duplicates(JOIN *join, TABLE *table, List<Item> &fields, Item *having)
   THD *thd= join->thd;
 
   DBUG_ENTER("remove_duplicates");
+  join->explain->ops_tracker.report_duplicate_removal();
 
   table->reginfo.lock_type=TL_WRITE;
 
@@ -21435,18 +21426,33 @@ SORT_FIELD *make_unireg_sortorder(THD *thd, ORDER *order, uint *length,
 
   for (;order;order=order->next,pos++)
   {
-    Item *item= order->item[0]->real_item();
+    Item *const item= order->item[0], *const real_item= item->real_item();
     pos->field= 0; pos->item= 0;
-    if (item->type() == Item::FIELD_ITEM)
-      pos->field= ((Item_field*) item)->field;
-    else if (item->type() == Item::SUM_FUNC_ITEM && !item->const_item())
-      pos->field= ((Item_sum*) item)->get_tmp_table_field();
-    else if (item->type() == Item::COPY_STR_ITEM)
-    {						// Blob patch
-      pos->item= ((Item_copy*) item)->get_item();
+    if (real_item->type() == Item::FIELD_ITEM)
+    {
+      // Could be a field, or Item_direct_view_ref wrapping a field
+      DBUG_ASSERT(item->type() == Item::FIELD_ITEM ||
+                  (item->type() == Item::REF_ITEM &&
+                   static_cast<Item_ref*>(item)->ref_type() ==
+                   Item_ref::VIEW_REF));
+      pos->field= static_cast<Item_field*>(real_item)->field;
+    }
+    else if (real_item->type() == Item::SUM_FUNC_ITEM &&
+             !real_item->const_item())
+    {
+      // Aggregate, or Item_aggregate_ref
+      DBUG_ASSERT(item->type() == Item::SUM_FUNC_ITEM ||
+                  (item->type() == Item::REF_ITEM &&
+                   static_cast<Item_ref*>(item)->ref_type() ==
+                   Item_ref::AGGREGATE_REF));
+      pos->field= item->get_tmp_table_field();
+    }
+    else if (real_item->type() == Item::COPY_STR_ITEM)
+    {                                           // Blob patch
+      pos->item= static_cast<Item_copy*>(real_item)->get_item();
     }
     else
-      pos->item= *order->item;
+      pos->item= item;
     pos->reverse=! order->asc;
     DBUG_ASSERT(pos->field != NULL || pos->item != NULL);
   }
@@ -21690,6 +21696,17 @@ find_order_in_list(THD *thd, Item **ref_pointer_array, TABLE_LIST *tables,
   uint el= all_fields.elements;
   all_fields.push_front(order_item); /* Add new field to field list. */
   ref_pointer_array[el]= order_item;
+  /*
+     If the order_item is a SUM_FUNC_ITEM, when fix_fields is called
+     ref_by is set to order->item which is the address of order_item.
+     But this needs to be address of order_item in the all_fields list.
+     As a result, when it gets replaced with Item_aggregate_ref
+     object in Item::split_sum_func2, we will be able to retrieve the
+     newly created object.
+  */
+  if (order_item->type() == Item::SUM_FUNC_ITEM)
+    ((Item_sum *)order_item)->ref_by= all_fields.head_ref();
+
   order->item= ref_pointer_array + el;
   return FALSE;
 }
@@ -23521,13 +23538,13 @@ int append_possible_keys(MEM_ROOT *alloc, String_list &list, TABLE *table,
 
 void JOIN_TAB::update_explain_data(uint idx)
 {
-  if (this == first_breadth_first_tab(join, WALK_OPTIMIZATION_TABS) + join->const_tables &&
+  if (this == join->first_breadth_first_optimization_tab() + join->const_tables &&
       join->select_lex->select_number != INT_MAX &&
       join->select_lex->select_number != UINT_MAX)
   {
     Explain_table_access *eta= new (join->thd->mem_root) Explain_table_access(join->thd->mem_root);
-    JOIN_TAB* const first_top_tab= first_breadth_first_tab(join, WALK_OPTIMIZATION_TABS);
-    save_explain_data(eta, join->const_table_map, join->select_distinct, first_top_tab);
+    save_explain_data(eta, join->const_table_map, join->select_distinct,
+                      join->first_breadth_first_optimization_tab());
 
     Explain_select *sel= join->thd->lex->explain->get_select(join->select_lex->select_number);
     idx -= my_count_bits(join->eliminated_tables);
@@ -24024,7 +24041,7 @@ int JOIN::save_explain_data_intern(Explain_query *output, bool need_tmp_table,
 
     xpl_sel->exec_const_cond= exec_const_cond;
 
-    JOIN_TAB* const first_top_tab= first_breadth_first_tab(join, WALK_OPTIMIZATION_TABS);
+    JOIN_TAB* const first_top_tab= join->first_breadth_first_optimization_tab();
     JOIN_TAB* prev_bush_root_tab= NULL;
 
     Explain_basic_join *cur_parent= xpl_sel;

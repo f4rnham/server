@@ -1,5 +1,5 @@
-/* Copyright (c) 2002, 2014, Oracle and/or its affiliates.
-   Copyright (c) 2012, 2014, SkySQL Ab.
+/* Copyright (c) 2002, 2015, Oracle and/or its affiliates.
+   Copyright (c) 2012, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1346,6 +1346,12 @@ static Sys_var_ulong Sys_max_connect_errors(
        VALID_RANGE(1, UINT_MAX), DEFAULT(MAX_CONNECT_ERRORS),
        BLOCK_SIZE(1));
 
+static Sys_var_uint Sys_max_digest_length(
+       "max_digest_length", "Maximum length considered for digest text.",
+       PARSED_EARLY READ_ONLY GLOBAL_VAR(max_digest_length),
+       CMD_LINE(REQUIRED_ARG),
+       VALID_RANGE(0, 1024 * 1024), DEFAULT(1024), BLOCK_SIZE(1));
+
 static bool check_max_delayed_threads(sys_var *self, THD *thd, set_var *var)
 {
   return var->type != OPT_GLOBAL &&
@@ -2639,7 +2645,7 @@ static Sys_var_ulong Sys_trans_alloc_block_size(
        "transaction_alloc_block_size",
        "Allocation block size for transactions to be stored in binary log",
        SESSION_VAR(trans_alloc_block_size), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(1024, UINT_MAX), DEFAULT(TRANS_ALLOC_BLOCK_SIZE),
+       VALID_RANGE(1024, 128 * 1024 * 1024), DEFAULT(TRANS_ALLOC_BLOCK_SIZE),
        BLOCK_SIZE(1024), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0),
        ON_UPDATE(fix_trans_mem_root));
 
@@ -2647,7 +2653,7 @@ static Sys_var_ulong Sys_trans_prealloc_size(
        "transaction_prealloc_size",
        "Persistent buffer for transactions to be stored in binary log",
        SESSION_VAR(trans_prealloc_size), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(1024, UINT_MAX), DEFAULT(TRANS_ALLOC_PREALLOC_SIZE),
+       VALID_RANGE(1024, 128 * 1024 * 1024), DEFAULT(TRANS_ALLOC_PREALLOC_SIZE),
        BLOCK_SIZE(1024), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0),
        ON_UPDATE(fix_trans_mem_root));
 
@@ -3380,8 +3386,8 @@ static Sys_var_charptr Sys_malloc_library(
 #include <openssl/ssl.h>
 #define SSL_LIBRARY "YaSSL " YASSL_VERSION
 #elif HAVE_OPENSSL
-#include <openssl/opensslv.h>
-#define SSL_LIBRARY OPENSSL_VERSION_TEXT
+#include <openssl/crypto.h>
+#define SSL_LIBRARY SSLeay_version(SSLEAY_VERSION)
 #else
 #error No SSL?
 #endif
@@ -4164,10 +4170,37 @@ static Sys_var_charptr Sys_relay_log(
        READ_ONLY GLOBAL_VAR(opt_relay_logname), CMD_LINE(REQUIRED_ARG),
        IN_FS_CHARSET, DEFAULT(0));
 
+/*
+  Uses NO_CMD_LINE since the --relay-log-index option set
+  opt_relaylog_index_name variable and computes a value for the
+  relay_log_index variable.
+*/
 static Sys_var_charptr Sys_relay_log_index(
        "relay_log_index", "The location and name to use for the file "
        "that keeps a list of the last relay logs",
-       READ_ONLY GLOBAL_VAR(opt_relaylog_index_name), CMD_LINE(REQUIRED_ARG),
+       READ_ONLY GLOBAL_VAR(relay_log_index), NO_CMD_LINE,
+       IN_FS_CHARSET, DEFAULT(0));
+
+/*
+  Uses NO_CMD_LINE since the --log-bin-index option set
+  opt_binlog_index_name variable and computes a value for the
+  log_bin_index variable.
+*/
+static Sys_var_charptr Sys_binlog_index(
+       "log_bin_index", "File that holds the names for last binary log files.",
+       READ_ONLY GLOBAL_VAR(log_bin_index), NO_CMD_LINE,
+       IN_FS_CHARSET, DEFAULT(0));
+
+static Sys_var_charptr Sys_relay_log_basename(
+       "relay_log_basename",
+       "The full path of the relay log file names, excluding the extension.",
+       READ_ONLY GLOBAL_VAR(relay_log_basename), NO_CMD_LINE,
+       IN_FS_CHARSET, DEFAULT(0));
+
+static Sys_var_charptr Sys_log_bin_basename(
+       "log_bin_basename",
+       "The full path of the binary log file names, excluding the extension.",
+       READ_ONLY GLOBAL_VAR(log_bin_basename), NO_CMD_LINE,
        IN_FS_CHARSET, DEFAULT(0));
 
 static Sys_var_charptr Sys_relay_log_info_file(
@@ -4857,6 +4890,12 @@ static Sys_var_mybool Sys_wsrep_gtid_mode(
        "ignored (backward compatibility).",
        GLOBAL_VAR(wsrep_gtid_mode), CMD_LINE(OPT_ARG), DEFAULT(FALSE));
 
+static char *wsrep_patch_version_ptr;
+static Sys_var_charptr Sys_wsrep_patch_version(
+       "wsrep_patch_version", "wsrep patch version",
+       READ_ONLY GLOBAL_VAR(wsrep_patch_version_ptr), CMD_LINE_HELP_ONLY,
+       IN_SYSTEM_CHARSET, DEFAULT(WSREP_PATCH_VERSION));
+
 #endif /* WITH_WSREP */
 
 static bool fix_host_cache_size(sys_var *, THD *, enum_var_type)
@@ -5151,9 +5190,15 @@ static Sys_var_harows Sys_expensive_subquery_limit(
 
 static Sys_var_mybool Sys_encrypt_tmp_disk_tables(
        "encrypt_tmp_disk_tables",
-       "Encrypt tmp disk tables (created as part of query execution)",
+       "Encrypt temporary on-disk tables (created as part of query execution)",
        GLOBAL_VAR(encrypt_tmp_disk_tables),
        CMD_LINE(OPT_ARG), DEFAULT(FALSE));
+
+static Sys_var_mybool Sys_encrypt_tmp_files(
+       "encrypt_tmp_files",
+       "Encrypt temporary files (created for filesort, binary log cache, etc)",
+       READ_ONLY GLOBAL_VAR(encrypt_tmp_files),
+       CMD_LINE(OPT_ARG), DEFAULT(TRUE));
 
 static bool check_pseudo_slave_mode(sys_var *self, THD *thd, set_var *var)
 {

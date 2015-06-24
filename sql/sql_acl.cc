@@ -8975,10 +8975,30 @@ static int handle_grant_struct(enum enum_acl_lists struct_no, bool drop,
     if (struct_no == ROLES_MAPPINGS_HASH)
     {
       const char* role= role_grant_pair->r_uname? role_grant_pair->r_uname: "";
-      if (user_from->is_role() ? strcmp(user_from->user.str, role) :
-          (strcmp(user_from->user.str, user) ||
-           my_strcasecmp(system_charset_info, user_from->host.str, host)))
-        continue;
+      if (user_from->is_role())
+      {
+        /* When searching for roles within the ROLES_MAPPINGS_HASH, we have
+           to check both the user field as well as the role field for a match.
+
+           It is possible to have a role granted to a role. If we are going
+           to modify the mapping entry, it needs to be done on either on the
+           "user" end (here represented by a role) or the "role" end. At least
+           one part must match.
+
+           If the "user" end has a not-empty host string, it can never match
+           as we are searching for a role here. A role always has an empty host
+           string.
+        */
+        if ((*host || strcmp(user_from->user.str, user)) &&
+            strcmp(user_from->user.str, role))
+          continue;
+      }
+      else
+      {
+        if (strcmp(user_from->user.str, user) ||
+            my_strcasecmp(system_charset_info, user_from->host.str, host))
+          continue;
+      }
     }
     else
     {
@@ -10363,11 +10383,14 @@ static int show_column_grants(THD *thd, SHOW_VAR *var, char *buff,
   var->type= SHOW_ULONG;
   var->value= buff;
   *(ulong *)buff= 0;
-  mysql_rwlock_rdlock(&LOCK_grant);
-  mysql_mutex_lock(&acl_cache->lock);
-  my_hash_iterate(&column_priv_hash, count_column_grants, buff);
-  mysql_mutex_unlock(&acl_cache->lock);
-  mysql_rwlock_unlock(&LOCK_grant);
+  if (initialized)
+  {
+    mysql_rwlock_rdlock(&LOCK_grant);
+    mysql_mutex_lock(&acl_cache->lock);
+    my_hash_iterate(&column_priv_hash, count_column_grants, buff);
+    mysql_mutex_unlock(&acl_cache->lock);
+    mysql_rwlock_unlock(&LOCK_grant);
+  }
   return 0;
 }
 

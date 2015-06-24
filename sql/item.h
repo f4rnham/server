@@ -1,8 +1,8 @@
 #ifndef SQL_ITEM_INCLUDED
 #define SQL_ITEM_INCLUDED
 
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates.
-   Copyright (c) 2009, 2013 Monty Program Ab.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -62,6 +62,8 @@ class user_var_entry;
 class JOIN;
 struct KEY_FIELD;
 struct SARGABLE_PARAM;
+class RANGE_OPT_PARAM;
+class SEL_TREE;
 
 
 static inline uint32
@@ -1147,6 +1149,15 @@ public:
   {
     return;
   }
+   /*
+     Make a select tree for all keys in a condition or a condition part
+     @param param         Context
+     @param cond_ptr[OUT] Store a replacement item here if the condition
+                          can be simplified, e.g.:
+                            WHERE part1 OR part2 OR part3
+                          with one of the partN evalutating to SEL_TREE::ALWAYS.
+   */
+   virtual SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
   /*
     Checks whether the item is:
     - a simple equality (field=field_item or field=constant_item), or
@@ -2264,7 +2275,7 @@ public:
   uint have_privileges;
   /* field need any privileges (for VIEW creation) */
   bool any_privileges;
-  Item_field(Name_resolution_context *context_arg,
+  Item_field(THD *thd, Name_resolution_context *context_arg,
              const char *db_arg,const char *table_name_arg,
 	     const char *field_name_arg);
   /*
@@ -3928,13 +3939,16 @@ class Item_direct_view_ref :public Item_direct_ref
 
 #define NO_NULL_TABLE (reinterpret_cast<TABLE *>(0x1))
 
+  void set_null_ref_table()
+  {
+    if (!view->is_inner_table_of_outer_join() ||
+        !(null_ref_table= view->get_real_join_table()))
+      null_ref_table= NO_NULL_TABLE;
+  }
+
   bool check_null_ref()
   {
-    if (null_ref_table == NULL)
-    {
-      if (!(null_ref_table= view->get_real_join_table()))
-        null_ref_table= NO_NULL_TABLE;
-    }
+    DBUG_ASSERT(null_ref_table);
     if (null_ref_table != NO_NULL_TABLE && null_ref_table->null_row)
     {
       null_value= 1;
@@ -3942,6 +3956,7 @@ class Item_direct_view_ref :public Item_direct_ref
     }
     return FALSE;
   }
+
 public:
   Item_direct_view_ref(Name_resolution_context *context_arg, Item **item,
                        const char *table_name_arg,
@@ -3949,7 +3964,11 @@ public:
                        TABLE_LIST *view_arg)
     :Item_direct_ref(context_arg, item, table_name_arg, field_name_arg),
     item_equal(0), view(view_arg),
-    null_ref_table(NULL) {}
+    null_ref_table(NULL)
+  {
+    if (fixed)
+      set_null_ref_table();
+  }
 
   bool fix_fields(THD *, Item **);
   bool eq(const Item *item, bool binary_cmp) const;
@@ -3967,7 +3986,9 @@ public:
   Item *equal_fields_propagator(uchar *arg);
   Item *replace_equal_field(uchar *arg);
   table_map used_tables() const;
+  void update_used_tables();
   table_map not_null_tables() const;
+  bool const_item() const { return used_tables() == 0; }
   bool walk(Item_processor processor, bool walk_subquery, uchar *arg)
   { 
     return (*ref)->walk(processor, walk_subquery, arg) ||
@@ -4489,12 +4510,12 @@ class Item_default_value : public Item_field
 {
 public:
   Item *arg;
-  Item_default_value(Name_resolution_context *context_arg)
-    :Item_field(context_arg, (const char *)NULL, (const char *)NULL,
+  Item_default_value(THD *thd, Name_resolution_context *context_arg)
+    :Item_field(thd, context_arg, (const char *)NULL, (const char *)NULL,
                (const char *)NULL),
      arg(NULL) {}
-  Item_default_value(Name_resolution_context *context_arg, Item *a)
-    :Item_field(context_arg, (const char *)NULL, (const char *)NULL,
+  Item_default_value(THD *thd, Name_resolution_context *context_arg, Item *a)
+    :Item_field(thd, context_arg, (const char *)NULL, (const char *)NULL,
                 (const char *)NULL),
      arg(a) {}
   enum Type type() const { return DEFAULT_VALUE_ITEM; }
@@ -4527,8 +4548,8 @@ class Item_insert_value : public Item_field
 {
 public:
   Item *arg;
-  Item_insert_value(Name_resolution_context *context_arg, Item *a)
-    :Item_field(context_arg, (const char *)NULL, (const char *)NULL,
+  Item_insert_value(THD *thd, Name_resolution_context *context_arg, Item *a)
+    :Item_field(thd, context_arg, (const char *)NULL, (const char *)NULL,
                (const char *)NULL),
      arg(a) {}
   bool eq(const Item *item, bool binary_cmp) const;
@@ -4585,11 +4606,11 @@ public:
   /* Pointer to Table_trigger_list object for table of this trigger */
   Table_triggers_list *triggers;
 
-  Item_trigger_field(Name_resolution_context *context_arg,
+  Item_trigger_field(THD *thd, Name_resolution_context *context_arg,
                      row_version_type row_ver_arg,
                      const char *field_name_arg,
                      ulong priv, const bool ro)
-    :Item_field(context_arg,
+    :Item_field(thd, context_arg,
                (const char *)NULL, (const char *)NULL, field_name_arg),
      row_version(row_ver_arg), field_idx((uint)-1), original_privilege(priv),
      want_privilege(priv), table_grants(NULL), read_only (ro)

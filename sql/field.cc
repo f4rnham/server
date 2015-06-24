@@ -5985,11 +5985,7 @@ bool Field_newdate::get_date(MYSQL_TIME *ltime,ulonglong fuzzydate)
   ltime->year=  (tmp >> 9);
   ltime->time_type= MYSQL_TIMESTAMP_DATE;
   ltime->hour= ltime->minute= ltime->second= ltime->second_part= ltime->neg= 0;
-  if (!tmp)
-    return fuzzydate & TIME_NO_ZERO_DATE;
-  if (!ltime->month || !ltime->day)
-    return fuzzydate & TIME_NO_ZERO_IN_DATE;
-  return 0;
+  return validate_for_get_date(tmp, ltime, fuzzydate);
 }
 
 
@@ -6113,11 +6109,7 @@ bool Field_datetime::get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
   ltime->day=		(int) (part1%100);
   ltime->month= 	(int) (part1/100%100);
   ltime->year= 		(int) (part1/10000);
-  if (!tmp)
-    return fuzzydate & TIME_NO_ZERO_DATE;
-  if (!ltime->month || !ltime->day)
-    return fuzzydate & TIME_NO_ZERO_IN_DATE;
-  return 0;
+  return validate_for_get_date(tmp, ltime, fuzzydate);
 }
 
 int Field_datetime::cmp(const uchar *a_ptr, const uchar *b_ptr)
@@ -6235,11 +6227,7 @@ bool Field_datetime_hires::get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
 {
   ulonglong packed= read_bigendian(ptr, Field_datetime_hires::pack_length());
   unpack_time(sec_part_unshift(packed, dec), ltime);
-  if (!packed)
-    return fuzzydate & TIME_NO_ZERO_DATE;
-  if (!ltime->month || !ltime->day)
-    return fuzzydate & TIME_NO_ZERO_IN_DATE;
-  return 0;
+  return validate_for_get_date(packed, ltime, fuzzydate);
 }
 
 uint32 Field_datetime_hires::pack_length() const
@@ -6282,11 +6270,7 @@ bool Field_datetimef::get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
 {
   longlong tmp= my_datetime_packed_from_binary(ptr, dec);
   TIME_from_longlong_datetime_packed(ltime, tmp);
-  if (!tmp)
-    return fuzzydate & TIME_NO_ZERO_DATE;
-  if (!ltime->month || !ltime->day)
-    return fuzzydate & TIME_NO_ZERO_IN_DATE;
-  return false;
+  return validate_for_get_date(tmp, ltime, fuzzydate);
 }
 
 
@@ -10039,35 +10023,52 @@ Create_field::Create_field(Field *old_field,Field *orig_field)
   char_length= length;
 
   /*
-    Copy the default value from the column object orig_field, if:
-    1) The column has a constant default value.
-    2) The column type is not a BLOB type.
-    3) The original column (old_field) was properly initialized with a record
-       buffer pointer.
-    4) The original column doesn't have a default function to auto-initialize
-       the column on INSERT
-  */
-  if (!(flags & (NO_DEFAULT_VALUE_FLAG | BLOB_FLAG)) && // 1) 2)
-      old_field->ptr && orig_field &&                   // 3)
-      !old_field->has_insert_default_function())        // 4)
-  {
-    char buff[MAX_FIELD_WIDTH];
-    String tmp(buff,sizeof(buff), charset);
-    my_ptrdiff_t diff;
+    Copy the default (constant/function) from the column object orig_field, if
+    supplied. We do this if all these conditions are met:
 
-    /* Get the value from default_values */
-    diff= (my_ptrdiff_t) (orig_field->table->s->default_values-
-                          orig_field->table->record[0]);
-    orig_field->move_field_offset(diff);	// Points now at default_values
-    if (!orig_field->is_real_null())
+    - The column allows a default.
+
+    - The column type is not a BLOB type.
+
+    - The original column (old_field) was properly initialized with a record
+      buffer pointer.
+  */
+  if (!(flags & (NO_DEFAULT_VALUE_FLAG | BLOB_FLAG)) &&
+      old_field->ptr != NULL &&
+      orig_field != NULL)
+  {
+    bool default_now= false;
+    if (real_type_with_now_as_default(sql_type))
     {
-      char buff[MAX_FIELD_WIDTH], *pos;
-      String tmp(buff, sizeof(buff), charset), *res;
-      res= orig_field->val_str(&tmp);
-      pos= (char*) sql_strmake(res->ptr(), res->length());
-      def= new Item_string(pos, res->length(), charset);
+      // The SQL type of the new field allows a function default:
+      default_now= orig_field->has_insert_default_function();
+      bool update_now= orig_field->has_update_default_function();
+
+      if (default_now && update_now)
+        unireg_check= Field::TIMESTAMP_DNUN_FIELD;
+      else if (default_now)
+        unireg_check= Field::TIMESTAMP_DN_FIELD;
+      else if (update_now)
+        unireg_check= Field::TIMESTAMP_UN_FIELD;
     }
-    orig_field->move_field_offset(-diff);	// Back to record[0]
+    if (!default_now)                           // Give a constant default
+    {
+      char buff[MAX_FIELD_WIDTH];
+      String tmp(buff,sizeof(buff), charset);
+
+      /* Get the value from default_values */
+      my_ptrdiff_t diff= orig_field->table->default_values_offset();
+      orig_field->move_field_offset(diff);	// Points now at default_values
+      if (!orig_field->is_real_null())
+      {
+        char buff[MAX_FIELD_WIDTH], *pos;
+        String tmp(buff, sizeof(buff), charset), *res;
+        res= orig_field->val_str(&tmp);
+        pos= (char*) sql_strmake(res->ptr(), res->length());
+        def= new Item_string(pos, res->length(), charset);
+      }
+      orig_field->move_field_offset(-diff);	// Back to record[0]
+    }
   }
 }
 
@@ -10209,6 +10210,7 @@ Field::set_warning(Sql_condition::enum_warning_level level, uint code,
 void Field::set_datetime_warning(Sql_condition::enum_warning_level level,
                                  uint code, const ErrConv *str,
                                  timestamp_type ts_type, int cuted_increment)
+                                 const
 {
   THD *thd= get_thd();
   if (thd->really_abort_on_warning() && level >= Sql_condition::WARN_LEVEL_WARN)

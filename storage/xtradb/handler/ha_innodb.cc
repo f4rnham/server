@@ -2029,6 +2029,15 @@ convert_error_code_to_mysql(
 		return(HA_ERR_TO_BIG_ROW);
 	}
 
+
+	case DB_TOO_BIG_FOR_REDO:
+		my_printf_error(ER_TOO_BIG_ROWSIZE, "%s" , MYF(0),
+				"The size of BLOB/TEXT data inserted"
+				" in one transaction is greater than"
+				" 10% of redo log size. Increase the"
+				" redo log size using innodb_log_file_size.");
+		return(HA_ERR_TO_BIG_ROW);
+
 	case DB_TOO_BIG_INDEX_COL:
 		my_error(ER_INDEX_COLUMN_TOO_LONG, MYF(0),
 			 DICT_MAX_FIELD_LEN_BY_FORMAT_FLAG(flags));
@@ -4231,7 +4240,6 @@ innobase_flush_logs(
 Synchronously read and parse the redo log up to the last
 checkpoint to write the changed page bitmap.
 @return 0 to indicate success.  Current implementation cannot fail. */
-static
 my_bool
 innobase_flush_changed_page_bitmaps()
 /*=================================*/
@@ -12276,7 +12284,7 @@ ha_innobase::create(
 						      &mtr);
 
 		/* Set up new crypt data */
-		fil_space_set_crypt_data(innobase_table->space, crypt_data);
+		crypt_data = fil_space_set_crypt_data(innobase_table->space, crypt_data);
 
 		/* Compute location to store crypt data */
 		byte* frame = buf_block_get_frame(block);
@@ -16160,10 +16168,8 @@ ha_innobase::cmp_ref(
 			len1 = innobase_read_from_2_little_endian(ref1);
 			len2 = innobase_read_from_2_little_endian(ref2);
 
-			ref1 += 2;
-			ref2 += 2;
 			result = ((Field_blob*) field)->cmp(
-				ref1, len1, ref2, len2);
+				ref1 + 2, len1, ref2 + 2, len2);
 		} else {
 			result = field->key_cmp(ref1, ref2);
 		}
@@ -20144,6 +20150,14 @@ static MYSQL_SYSVAR_BOOL(disable_background_merge,
   NULL, NULL, FALSE);
 #endif /* UNIV_DEBUG || UNIV_IBUF_DEBUG */
 
+static MYSQL_SYSVAR_ULONG(buf_dump_status_frequency, srv_buf_dump_status_frequency,
+  PLUGIN_VAR_RQCMDARG,
+  "A number between [0, 100] that tells how oftern buffer pool dump status "
+  "in percentages should be printed. E.g. 10 means that buffer pool dump "
+  "status is printed when every 10% of number of buffer pool pages are "
+  "dumped. Default is 0 (only start and end status is printed).",
+  NULL, NULL, 0, 0, 100, 0);
+
 #ifdef WITH_INNODB_DISALLOW_WRITES
 /*******************************************************
  *    innobase_disallow_writes variable definition     *
@@ -20383,7 +20397,7 @@ static MYSQL_SYSVAR_ENUM(encrypt_tables, srv_encrypt_tables,
 			 PLUGIN_VAR_OPCMDARG,
 			 "Enable encryption for tables. "
 			 "Don't forget to enable --innodb-encrypt-log too",
-			 NULL,
+			 innodb_encrypt_tables_validate,
 			 innodb_encrypt_tables_update,
 			 0,
 			 &srv_encrypt_tables_typelib);
@@ -20721,6 +20735,7 @@ static struct st_mysql_sys_var* innobase_system_variables[]= {
   MYSQL_SYSVAR(debug_force_scrubbing),
 #endif
   MYSQL_SYSVAR(instrument_semaphores),
+  MYSQL_SYSVAR(buf_dump_status_frequency),
   NULL
 };
 
@@ -20775,7 +20790,8 @@ i_s_innodb_changed_pages,
 i_s_innodb_mutexes,
 i_s_innodb_sys_semaphore_waits,
 i_s_innodb_tablespaces_encryption,
-i_s_innodb_tablespaces_scrubbing
+i_s_innodb_tablespaces_scrubbing,
+i_s_innodb_changed_page_bitmaps
 maria_declare_plugin_end;
 
 /** @brief Initialize the default value of innodb_commit_concurrency.
@@ -21286,6 +21302,7 @@ innodb_compression_algorithm_validate(
 	}
 
 	compression_algorithm = *reinterpret_cast<ulong*>(save);
+	(void)compression_algorithm;
 
 #ifndef HAVE_LZ4
 	if (compression_algorithm == PAGE_LZ4_ALGORITHM) {

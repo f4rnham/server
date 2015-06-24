@@ -2301,7 +2301,7 @@ public:
   { TRASH(ptr, size); }
 
   ulong thread_id;
-  time_t start_time;
+  ulonglong start_time;
   uint   command;
   const char *user,*host,*db,*proc_info,*state_info;
   CSET_STRING query_string;
@@ -2432,7 +2432,10 @@ void mysqld_list_processes(THD *thd,const char *user, bool verbose)
       }
       else
         thd_info->progress= 0.0;
-      thd_info->start_time= tmp->start_time;
+      thd_info->start_time= tmp->start_utime;
+      ulonglong utime_after_query_snapshot= tmp->utime_after_query;
+      if (thd_info->start_time < utime_after_query_snapshot)
+        thd_info->start_time= utime_after_query_snapshot; // COM_SLEEP
       mysql_mutex_unlock(&tmp->LOCK_thd_data);
       thread_infos.append(thd_info);
     }
@@ -2440,7 +2443,7 @@ void mysqld_list_processes(THD *thd,const char *user, bool verbose)
   mysql_mutex_unlock(&LOCK_thread_count);
 
   thread_info *thd_info;
-  time_t now= my_time(0);
+  ulonglong now= microsecond_interval_timer();
   char buff[20];                                // For progress
   String store_buffer(buff, sizeof(buff), system_charset_info);
 
@@ -2455,8 +2458,8 @@ void mysqld_list_processes(THD *thd,const char *user, bool verbose)
       protocol->store(thd_info->proc_info, system_charset_info);
     else
       protocol->store(command_name[thd_info->command].str, system_charset_info);
-    if (thd_info->start_time)
-      protocol->store_long ((longlong) (now - thd_info->start_time));
+    if (thd_info->start_time && now > thd_info->start_time)
+      protocol->store_long(now - thd_info->start_time);
     else
       protocol->store_null();
     protocol->store(thd_info->state_info, system_charset_info);
@@ -2730,7 +2733,7 @@ int fill_schema_processlist(THD* thd, TABLE_LIST* tables, COND* cond)
   TABLE *table= tables->table;
   CHARSET_INFO *cs= system_charset_info;
   char *user;
-  my_hrtime_t unow= my_hrtime();
+  ulonglong unow= microsecond_interval_timer();
   DBUG_ENTER("fill_schema_processlist");
 
   DEBUG_SYNC(thd,"fill_schema_processlist_after_unow");
@@ -2793,9 +2796,12 @@ int fill_schema_processlist(THD* thd, TABLE_LIST* tables, COND* cond)
         table->field[4]->store(command_name[tmp->get_command()].str,
                                command_name[tmp->get_command()].length, cs);
       /* MYSQL_TIME */
-      ulonglong start_utime= tmp->start_time * HRTIME_RESOLUTION + tmp->start_time_sec_part;
-      ulonglong utime= start_utime && start_utime < unow.val
-                       ? unow.val - start_utime : 0;
+      ulonglong utime= tmp->start_utime;
+      ulonglong utime_after_query_snapshot= tmp->utime_after_query;
+      if (utime < utime_after_query_snapshot)
+        utime= utime_after_query_snapshot; // COM_SLEEP
+      utime= utime && utime < unow ? unow - utime : 0;
+
       table->field[5]->store(utime / HRTIME_RESOLUTION, TRUE);
       /* STATE */
       if ((val= thread_state_info(tmp)))
@@ -2978,7 +2984,7 @@ void reset_status_vars()
   catch-all cleanup function, cleans up everything no matter what
 
   DESCRIPTION
-    This function is not strictly required if all add_to_status/
+    This function is not strictly required if all add_status_vars/
     remove_status_vars are properly paired, but it's a safety measure that
     deletes everything from the all_status_vars[] even if some
     remove_status_vars were forgotten
@@ -7443,7 +7449,7 @@ static int make_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
   {
     if (field_info->old_name)
     {
-      Item_field *field= new Item_field(context,
+      Item_field *field= new Item_field(thd, context,
                                         NullS, NullS, field_info->field_name);
       if (field)
       {
@@ -7470,7 +7476,7 @@ int make_schemata_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
   {
     ST_FIELD_INFO *field_info= &schema_table->fields_info[1];
     String buffer(tmp,sizeof(tmp), system_charset_info);
-    Item_field *field= new Item_field(context,
+    Item_field *field= new Item_field(thd, context,
                                       NullS, NullS, field_info->field_name);
     if (!field || add_item_to_list(thd, field))
       return 1;
@@ -7505,7 +7511,7 @@ int make_table_names_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
     buffer.append(lex->wild->ptr());
     buffer.append(')');
   }
-  Item_field *field= new Item_field(context,
+  Item_field *field= new Item_field(thd, context,
                                     NullS, NullS, field_info->field_name);
   if (add_item_to_list(thd, field))
     return 1;
@@ -7514,7 +7520,7 @@ int make_table_names_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
   {
     field->set_name(buffer.ptr(), buffer.length(), system_charset_info);
     field_info= &schema_table->fields_info[3];
-    field= new Item_field(context, NullS, NullS, field_info->field_name);
+    field= new Item_field(thd, context, NullS, NullS, field_info->field_name);
     if (add_item_to_list(thd, field))
       return 1;
     field->set_name(field_info->old_name, strlen(field_info->old_name),
@@ -7538,7 +7544,7 @@ int make_columns_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
                                *field_num == 18 ||
                                *field_num == 19))
       continue;
-    Item_field *field= new Item_field(context,
+    Item_field *field= new Item_field(thd, context,
                                       NullS, NullS, field_info->field_name);
     if (field)
     {
@@ -7563,7 +7569,7 @@ int make_character_sets_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
   for (; *field_num >= 0; field_num++)
   {
     field_info= &schema_table->fields_info[*field_num];
-    Item_field *field= new Item_field(context,
+    Item_field *field= new Item_field(thd, context,
                                       NullS, NullS, field_info->field_name);
     if (field)
     {
@@ -7588,7 +7594,7 @@ int make_proc_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
   for (; *field_num >= 0; field_num++)
   {
     field_info= &schema_table->fields_info[*field_num];
-    Item_field *field= new Item_field(context,
+    Item_field *field= new Item_field(thd, context,
                                       NullS, NullS, field_info->field_name);
     if (field)
     {

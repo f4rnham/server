@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2013, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2014, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, 2009 Google Inc.
 Copyright (c) 2009, Percona Inc.
 Copyright (c) 2013, 2015, MariaDB Corporation.
@@ -687,6 +687,9 @@ current_time % 5 != 0. */
 # define	SRV_MASTER_MEM_VALIDATE_INTERVAL	(13)
 #endif /* MEM_PERIODIC_CHECK */
 # define	SRV_MASTER_DICT_LRU_INTERVAL		(47)
+
+/** Buffer pool dump status frequence in percentages */
+UNIV_INTERN ulong srv_buf_dump_status_frequency = 0;
 
 /** Acquire the system_mutex. */
 #define srv_sys_mutex_enter() do {			\
@@ -3431,7 +3434,9 @@ srv_do_purge(
 
 		*n_total_purged += n_pages_purged;
 
-	} while (!srv_purge_should_exit(n_pages_purged) && n_pages_purged > 0);
+	} while (!srv_purge_should_exit(n_pages_purged)
+		 && n_pages_purged > 0
+		 && purge_sys->state == PURGE_STATE_RUN);
 
 	return(rseg_history_len);
 }

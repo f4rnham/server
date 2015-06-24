@@ -289,111 +289,11 @@ public:
   void reset_cache() { cache= NULL; }
 };
 
-class Comp_creator
-{
-public:
-  Comp_creator() {}                           /* Remove gcc warning */
-  virtual ~Comp_creator() {}                  /* Remove gcc warning */
-  /**
-    Create operation with given arguments.
-  */
-  virtual Item_bool_func2* create(THD *thd, Item *a, Item *b) const = 0;
-  /**
-    Create operation with given arguments in swap order.
-  */
-  virtual Item_bool_func2* create_swap(THD *thd, Item *a, Item *b) const = 0;
-  virtual const char* symbol(bool invert) const = 0;
-  virtual bool eqne_op() const = 0;
-  virtual bool l_op() const = 0;
-};
-
-class Eq_creator :public Comp_creator
-{
-public:
-  Eq_creator() {}                             /* Remove gcc warning */
-  virtual ~Eq_creator() {}                    /* Remove gcc warning */
-  virtual Item_bool_func2* create(THD *thd, Item *a, Item *b) const;
-  virtual Item_bool_func2* create_swap(THD *thd, Item *a, Item *b) const;
-  virtual const char* symbol(bool invert) const { return invert? "<>" : "="; }
-  virtual bool eqne_op() const { return 1; }
-  virtual bool l_op() const { return 0; }
-};
-
-class Ne_creator :public Comp_creator
-{
-public:
-  Ne_creator() {}                             /* Remove gcc warning */
-  virtual ~Ne_creator() {}                    /* Remove gcc warning */
-  virtual Item_bool_func2* create(THD *thd, Item *a, Item *b) const;
-  virtual Item_bool_func2* create_swap(THD *thd, Item *a, Item *b) const;
-  virtual const char* symbol(bool invert) const { return invert? "=" : "<>"; }
-  virtual bool eqne_op() const { return 1; }
-  virtual bool l_op() const { return 0; }
-};
-
-class Gt_creator :public Comp_creator
-{
-public:
-  Gt_creator() {}                             /* Remove gcc warning */
-  virtual ~Gt_creator() {}                    /* Remove gcc warning */
-  virtual Item_bool_func2* create(THD *thd, Item *a, Item *b) const;
-  virtual Item_bool_func2* create_swap(THD *thd, Item *a, Item *b) const;
-  virtual const char* symbol(bool invert) const { return invert? "<=" : ">"; }
-  virtual bool eqne_op() const { return 0; }
-  virtual bool l_op() const { return 0; }
-};
-
-class Lt_creator :public Comp_creator
-{
-public:
-  Lt_creator() {}                             /* Remove gcc warning */
-  virtual ~Lt_creator() {}                    /* Remove gcc warning */
-  virtual Item_bool_func2* create(THD *thd, Item *a, Item *b) const;
-  virtual Item_bool_func2* create_swap(THD *thd, Item *a, Item *b) const;
-  virtual const char* symbol(bool invert) const { return invert? ">=" : "<"; }
-  virtual bool eqne_op() const { return 0; }
-  virtual bool l_op() const { return 1; }
-};
-
-class Ge_creator :public Comp_creator
-{
-public:
-  Ge_creator() {}                             /* Remove gcc warning */
-  virtual ~Ge_creator() {}                    /* Remove gcc warning */
-  virtual Item_bool_func2* create(THD *thd, Item *a, Item *b) const;
-  virtual Item_bool_func2* create_swap(THD *thd, Item *a, Item *b) const;
-  virtual const char* symbol(bool invert) const { return invert? "<" : ">="; }
-  virtual bool eqne_op() const { return 0; }
-  virtual bool l_op() const { return 0; }
-};
-
-class Le_creator :public Comp_creator
-{
-public:
-  Le_creator() {}                             /* Remove gcc warning */
-  virtual ~Le_creator() {}                    /* Remove gcc warning */
-  virtual Item_bool_func2* create(THD *thd, Item *a, Item *b) const;
-  virtual Item_bool_func2* create_swap(THD *thd, Item *a, Item *b) const;
-  virtual const char* symbol(bool invert) const { return invert? ">" : "<="; }
-  virtual bool eqne_op() const { return 0; }
-  virtual bool l_op() const { return 1; }
-};
-
 class Item_bool_func2 :public Item_bool_func
-{						/* Bool with 2 string args */
-protected:
-  Arg_comparator cmp;
-  bool abort_on_null;
-
+{                                              /* Bool with 2 string args */
 public:
   Item_bool_func2(Item *a,Item *b)
-    :Item_bool_func(a,b), cmp(tmp_arg, tmp_arg+1),
-     abort_on_null(FALSE) { sargable= TRUE; }
-  void fix_length_and_dec();
-  int set_cmp_func()
-  {
-    return cmp.set_cmp_func(this, tmp_arg, tmp_arg+1, TRUE);
-  }
+    :Item_bool_func(a,b) { sargable= TRUE; }
   optimize_type select_optimize() const { return OPTIMIZE_OP; }
   virtual enum Functype rev_functype() const { return UNKNOWN_FUNC; }
   bool have_rev_func() const { return rev_functype() != UNKNOWN_FUNC; }
@@ -404,25 +304,18 @@ public:
   }
 
   bool is_null() { return MY_TEST(args[0]->is_null() || args[1]->is_null()); }
-  CHARSET_INFO *compare_collation() const
-  { return cmp.cmp_collation.collation; }
-  void top_level_item() { abort_on_null= TRUE; }
-  Arg_comparator *get_comparator() { return &cmp; }
-  void cleanup()
-  {
-    Item_bool_func::cleanup();
-    cmp.cleanup();
-  }
   COND *remove_eq_conds(THD *thd, Item::cond_result *cond_value,
                         bool top_level);
 
-  friend class  Arg_comparator;
 };
 
 class Item_bool_rowready_func2 :public Item_bool_func2
 {
+protected:
+  Arg_comparator cmp;
 public:
-  Item_bool_rowready_func2(Item *a, Item *b) :Item_bool_func2(a, b)
+  Item_bool_rowready_func2(Item *a, Item *b)
+    :Item_bool_func2(a, b), cmp(tmp_arg, tmp_arg+1) 
   {
     allowed_arg_cols= 0;  // Fetch this value from first argument
   }
@@ -431,6 +324,19 @@ public:
   bool subst_argument_checker(uchar **arg)
   {
     return (*arg != NULL);     
+  }
+  void fix_length_and_dec();
+  int set_cmp_func()
+  {
+    return cmp.set_cmp_func(this, tmp_arg, tmp_arg + 1, true);
+  }
+  CHARSET_INFO *compare_collation() const
+  { return cmp.cmp_collation.collation; }
+  Arg_comparator *get_comparator() { return &cmp; }
+  void cleanup()
+  {
+    Item_bool_func2::cleanup();
+    cmp.cleanup();
   }
   bool can_optimize_group_min_max(Item_field *min_max_arg_item,
                                   const Item *const_item) const
@@ -459,7 +365,6 @@ public:
   enum Functype functype() const { return XOR_FUNC; }
   const char *func_name() const { return "xor"; }
   longlong val_int();
-  void top_level_item() {}
   Item *neg_transformer(THD *thd);
   bool subst_argument_checker(uchar **arg)
   {
@@ -568,15 +473,18 @@ public:
 
 class Item_func_eq :public Item_bool_rowready_func2
 {
+  bool abort_on_null;
 public:
   Item_func_eq(Item *a,Item *b) :
-    Item_bool_rowready_func2(a,b), in_equality_no(UINT_MAX)
+    Item_bool_rowready_func2(a,b),
+    abort_on_null(false), in_equality_no(UINT_MAX)
   {}
   longlong val_int();
   enum Functype functype() const { return EQ_FUNC; }
   enum Functype rev_functype() const { return EQ_FUNC; }
   cond_result eq_cmp_result() const { return COND_TRUE; }
   const char *func_name() const { return "="; }
+  void top_level_item() { abort_on_null= true; }
   Item *negated_item();
   COND *build_equal_items(THD *thd, COND_EQUAL *inherited,
                           bool link_item_fields,
@@ -598,6 +506,7 @@ public:
   */
   uint in_equality_no;
   virtual uint exists2in_reserved_items() { return 1; };
+  friend class  Arg_comparator;
 };
 
 class Item_func_equal :public Item_bool_rowready_func2
@@ -745,6 +654,7 @@ public:
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields,
                       uint *and_level, table_map usable_tables,
                       SARGABLE_PARAM **sargables);
+  SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
 };
 
 
@@ -1427,6 +1337,7 @@ public:
     { return OPTIMIZE_KEY; }
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields, uint *and_level,
                       table_map usable_tables, SARGABLE_PARAM **sargables);
+  SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
   virtual void print(String *str, enum_query_type query_type);
   enum Functype functype() const { return IN_FUNC; }
   const char *func_name() const { return " IN "; }
@@ -1579,6 +1490,8 @@ class Item_func_like :public Item_bool_func2
   bool escape_used_in_parsing;
   bool use_sampling;
 
+  DTCollation cmp_collation;
+  String cmp_value1, cmp_value2;
 public:
   int escape;
 
@@ -1589,6 +1502,8 @@ public:
   longlong val_int();
   enum Functype functype() const { return LIKE_FUNC; }
   optimize_type select_optimize() const;
+  CHARSET_INFO *compare_collation() const
+  { return cmp_collation.collation; }
   cond_result eq_cmp_result() const
   {
     /**
@@ -1628,6 +1543,12 @@ public:
                       table_map usable_tables, SARGABLE_PARAM **sargables);
   const char *func_name() const { return "like"; }
   bool fix_fields(THD *thd, Item **ref);
+  void fix_length_and_dec()
+  {
+    max_length= 1;
+    args[0]->cmp_context= args[1]->cmp_context= STRING_RESULT;
+    agg_arg_charsets_for_comparison(cmp_collation, args, 2);
+  }
   void cleanup();
 
   bool find_selective_predicates_list_processor(uchar *arg);
@@ -1823,6 +1744,7 @@ public:
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields,
                       uint *and_level, table_map usable_tables,
                       SARGABLE_PARAM **sargables);
+  SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
   virtual void print(String *str, enum_query_type query_type);
   void split_sum_func(THD *thd, Item **ref_pointer_array, List<Item> &fields);
   friend int setup_conds(THD *thd, TABLE_LIST *tables, TABLE_LIST *leaves,
@@ -1982,12 +1904,8 @@ public:
 
   COND_EQUAL *upper_levels;       /* multiple equalities of upper and levels */
 
-  inline Item_equal()
-    : Item_bool_func(), with_const(FALSE), eval_item(0), cond_false(0),
-      context_field(NULL)
-  { const_item_cache=0; sargable= TRUE; }
-  Item_equal(Item *f1, Item *f2, bool with_const_item);
-  Item_equal(Item_equal *item_equal);
+  Item_equal(THD *thd_arg, Item *f1, Item *f2, bool with_const_item);
+  Item_equal(THD *thd_arg, Item_equal *item_equal);
   /* Currently the const item is always the first in the list of equal items */
   inline Item* get_const() { return with_const ? equal_items.head() : NULL; }
   void add_const(THD *thd, Item *c, Item *f = NULL);
@@ -2016,6 +1934,7 @@ public:
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields,
                       uint *and_level, table_map usable_tables,
                       SARGABLE_PARAM **sargables);
+  SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
   bool walk(Item_processor processor, bool walk_subquery, uchar *arg);
   Item *transform(Item_transformer transformer, uchar *arg);
   virtual void print(String *str, enum_query_type query_type);
@@ -2172,6 +2091,7 @@ public:
                           COND_EQUAL **cond_equal_ref);
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields, uint *and_level,
                       table_map usable_tables, SARGABLE_PARAM **sargables);
+  SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
 };
 
 inline bool is_cond_and(Item *item)
@@ -2247,6 +2167,135 @@ longlong get_datetime_value(THD *thd, Item ***item_arg, Item **cache_arg,
 
 bool get_mysql_time_from_str(THD *thd, String *str, timestamp_type warn_type,
                              const char *warn_name, MYSQL_TIME *l_time);
+
+
+class Comp_creator
+{
+public:
+  Comp_creator() {}                           /* Remove gcc warning */
+  virtual ~Comp_creator() {}                  /* Remove gcc warning */
+  /**
+    Create operation with given arguments.
+  */
+  virtual Item_bool_rowready_func2* create(MEM_ROOT *, Item *a, Item *b)
+                                           const = 0;
+  /**
+    Create operation with given arguments in swap order.
+  */
+  virtual Item_bool_rowready_func2* create_swap(MEM_ROOT *, Item *a, Item *b)
+                                                const = 0;
+  virtual const char* symbol(bool invert) const = 0;
+  virtual bool eqne_op() const = 0;
+  virtual bool l_op() const = 0;
+};
+
+class Eq_creator :public Comp_creator
+{
+public:
+  Eq_creator() {}                             /* Remove gcc warning */
+  virtual ~Eq_creator() {}                    /* Remove gcc warning */
+  Item_bool_rowready_func2* create(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_eq(a, b);
+  }
+  Item_bool_rowready_func2* create_swap(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_eq(b, a);
+  }
+  const char* symbol(bool invert) const { return invert? "<>" : "="; }
+  bool eqne_op() const { return 1; }
+  bool l_op() const { return 0; }
+};
+
+class Ne_creator :public Comp_creator
+{
+public:
+  Ne_creator() {}                             /* Remove gcc warning */
+  virtual ~Ne_creator() {}                    /* Remove gcc warning */
+  Item_bool_rowready_func2* create(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_ne(a, b);
+  }
+  Item_bool_rowready_func2* create_swap(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_ne(b, a);
+  }
+  const char* symbol(bool invert) const { return invert? "=" : "<>"; }
+  bool eqne_op() const { return 1; }
+  bool l_op() const { return 0; }
+};
+
+class Gt_creator :public Comp_creator
+{
+public:
+  Gt_creator() {}                             /* Remove gcc warning */
+  virtual ~Gt_creator() {}                    /* Remove gcc warning */
+  Item_bool_rowready_func2* create(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_gt(a, b);
+  }
+  Item_bool_rowready_func2* create_swap(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_lt(b, a);
+  }
+  const char* symbol(bool invert) const { return invert? "<=" : ">"; }
+  bool eqne_op() const { return 0; }
+  bool l_op() const { return 0; }
+};
+
+class Lt_creator :public Comp_creator
+{
+public:
+  Lt_creator() {}                             /* Remove gcc warning */
+  virtual ~Lt_creator() {}                    /* Remove gcc warning */
+  Item_bool_rowready_func2* create(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_lt(a, b);
+  }
+  Item_bool_rowready_func2* create_swap(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_gt(b, a);
+  }
+  const char* symbol(bool invert) const { return invert? ">=" : "<"; }
+  bool eqne_op() const { return 0; }
+  bool l_op() const { return 1; }
+};
+
+class Ge_creator :public Comp_creator
+{
+public:
+  Ge_creator() {}                             /* Remove gcc warning */
+  virtual ~Ge_creator() {}                    /* Remove gcc warning */
+  Item_bool_rowready_func2* create(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_ge(a, b);
+  }
+  Item_bool_rowready_func2* create_swap(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_le(b, a);
+  }
+  const char* symbol(bool invert) const { return invert? "<" : ">="; }
+  bool eqne_op() const { return 0; }
+  bool l_op() const { return 0; }
+};
+
+class Le_creator :public Comp_creator
+{
+public:
+  Le_creator() {}                             /* Remove gcc warning */
+  virtual ~Le_creator() {}                    /* Remove gcc warning */
+  Item_bool_rowready_func2* create(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_le(a, b);
+  }
+  Item_bool_rowready_func2* create_swap(MEM_ROOT *root, Item *a, Item *b) const
+  {
+    return new(root) Item_func_ge(b, a);
+  }
+  const char* symbol(bool invert) const { return invert? ">" : "<="; }
+  bool eqne_op() const { return 0; }
+  bool l_op() const { return 1; }
+};
 
 /*
   These need definitions from this file but the variables are defined

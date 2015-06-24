@@ -282,7 +282,7 @@ sql_create_definition_file(const LEX_STRING *dir, const LEX_STRING *file_name,
   path[path_end+1]= '\0';
   if ((handler= mysql_file_create(key_file_fileparser,
                                   path, CREATE_MODE, O_RDWR | O_TRUNC,
-                                  MYF(MY_WME))) <= 0)
+                                  MYF(MY_WME))) < 0)
   {
     DBUG_RETURN(TRUE);
   }
@@ -294,7 +294,7 @@ sql_create_definition_file(const LEX_STRING *dir, const LEX_STRING *file_name,
   if (my_b_append(&file, (const uchar *)STRING_WITH_LEN("TYPE=")) ||
       my_b_append(&file, (const uchar *)type->str, type->length) ||
       my_b_append(&file, (const uchar *)STRING_WITH_LEN("\n")))
-    goto err_w_file;
+    goto err_w_cache;
 
   // write parameters to temporary file
   for (param= parameters; param->name.str; param++)

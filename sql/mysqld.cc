@@ -1,5 +1,5 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates.
-   Copyright (c) 2008, 2014, SkySQL Ab.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -520,6 +520,7 @@ ulong binlog_cache_use= 0, binlog_cache_disk_use= 0;
 ulong binlog_stmt_cache_use= 0, binlog_stmt_cache_disk_use= 0;
 ulong max_connections, max_connect_errors;
 ulong extra_max_connections;
+uint max_digest_length= 0;
 ulong slave_retried_transactions;
 ulonglong slave_skipped_errors;
 ulong feature_files_opened_with_delayed_keys;
@@ -628,7 +629,7 @@ char server_version[SERVER_VERSION_LENGTH];
 char *mysqld_unix_port, *opt_mysql_tmpdir;
 ulong thread_handling;
 
-my_bool encrypt_tmp_disk_tables;
+my_bool encrypt_tmp_disk_tables, encrypt_tmp_files;
 
 /** name of reference on left expression in rewritten IN subquery */
 const char *in_left_expr_name= "<left expr>";
@@ -1900,13 +1901,15 @@ static void __cdecl kill_server(int sig_ptr)
   }
 #endif
 
-  if (WSREP_ON)
-    wsrep_stop_replication(NULL);
+  /* Stop wsrep threads in case they are running. */
+  wsrep_stop_replication(NULL);
 
   close_connections();
 
   if (wsrep_inited == 1)
     wsrep_deinit(true);
+
+  wsrep_thr_deinit();
 
   if (sig != MYSQL_KILL_SIGNAL &&
       sig != 0)
@@ -2159,6 +2162,12 @@ void clean_up(bool print_message)
   mysql_cond_broadcast(&COND_thread_count);
   mysql_mutex_unlock(&LOCK_thread_count);
 
+  my_free(const_cast<char*>(log_bin_basename));
+  my_free(const_cast<char*>(log_bin_index));
+#ifndef EMBEDDED_LIBRARY
+  my_free(const_cast<char*>(relay_log_basename));
+  my_free(const_cast<char*>(relay_log_index));
+#endif
   free_list(opt_plugin_load_list_ptr);
 
   if (THR_THD)
@@ -2330,7 +2339,8 @@ static struct passwd *check_user(const char *user)
   {
     if (!opt_bootstrap && !opt_help)
     {
-      sql_print_error("Fatal error: Please read \"Security\" section of the manual to find out how to run mysqld as root!\n");
+      sql_print_error("Fatal error: Please consult the Knowledge Base "
+                      "to find out how to run mysqld as root!\n");
       unireg_abort(1);
     }
     return NULL;
@@ -3996,6 +4006,42 @@ static void my_malloc_size_cb_func(long long size, my_bool is_thread_specific)
 }
 }
 
+/**
+  Create a replication file name or base for file names.
+
+  @param[in] opt Value of option, or NULL
+  @param[in] def Default value if option value is not set.
+  @param[in] ext Extension to use for the path
+
+  @returns Pointer to string containing the full file path, or NULL if
+  it was not possible to create the path.
+ */
+static inline const char *
+rpl_make_log_name(const char *opt,
+                  const char *def,
+                  const char *ext)
+{
+  DBUG_ENTER("rpl_make_log_name");
+  DBUG_PRINT("enter", ("opt: %s, def: %s, ext: %s", opt, def, ext));
+  char buff[FN_REFLEN];
+  const char *base= opt ? opt : def;
+  unsigned int options=
+    MY_REPLACE_EXT | MY_UNPACK_FILENAME | MY_SAFE_PATH;
+
+  /* mysql_real_data_home_ptr  may be null if no value of datadir has been
+     specified through command-line or througha cnf file. If that is the
+     case we make mysql_real_data_home_ptr point to mysql_real_data_home
+     which, in that case holds the default path for data-dir.
+  */
+  if(mysql_real_data_home_ptr == NULL)
+    mysql_real_data_home_ptr= mysql_real_data_home;
+
+  if (fn_format(buff, base, mysql_real_data_home_ptr, ext, options))
+    DBUG_RETURN(my_strdup(buff, MYF(MY_WME)));
+  else
+    DBUG_RETURN(NULL);
+}
+
 static int init_common_variables()
 {
   umask(((~my_umask) & 0666));
@@ -4186,6 +4232,10 @@ static int init_common_variables()
   if (get_options(&remaining_argc, &remaining_argv))
     return 1;
   set_server_version();
+
+  if (!opt_help)
+    sql_print_information("%s (mysqld %s) starting as process %lu ...",
+                          my_progname, server_version, (ulong) getpid());
 
 #ifndef EMBEDDED_LIBRARY
   if (opt_abort && !opt_verbose)
@@ -4458,11 +4508,12 @@ static int init_common_variables()
     if (lower_case_table_names_used)
     {
       if (global_system_variables.log_warnings)
-	sql_print_warning("\
-You have forced lower_case_table_names to 0 through a command-line \
-option, even though your file system '%s' is case insensitive.  This means \
-that you can corrupt a MyISAM table by accessing it with different cases. \
-You should consider changing lower_case_table_names to 1 or 2",
+        sql_print_warning("You have forced lower_case_table_names to 0 through "
+                          "a command-line option, even though your file system "
+                          "'%s' is case insensitive.  This means that you can "
+                          "corrupt a MyISAM table by accessing it with "
+                          "different cases.  You should consider changing "
+                          "lower_case_table_names to 1 or 2",
 			mysql_real_data_home);
     }
     else
@@ -4679,7 +4730,6 @@ static void init_ssl()
 					  opt_ssl_cipher, &error,
                                           opt_ssl_crl, opt_ssl_crlpath);
     DBUG_PRINT("info",("ssl_acceptor_fd: 0x%lx", (long) ssl_acceptor_fd));
-    ERR_remove_state(0);
     if (!ssl_acceptor_fd)
     {
       sql_print_warning("Failed to setup SSL");
@@ -4687,6 +4737,14 @@ static void init_ssl()
       opt_use_ssl = 0;
       have_ssl= SHOW_OPTION_DISABLED;
     }
+    if (global_system_variables.log_warnings > 0)
+    {
+      ulong err;
+      while ((err= ERR_get_error()))
+        sql_print_warning("SSL error: %s", ERR_error_string(err, NULL));
+    }
+    else
+      ERR_remove_state(0);
   }
   else
   {
@@ -4914,15 +4972,16 @@ static int init_server_components()
   {
     if (opt_bin_log)
     {
-      sql_print_error("using --replicate-same-server-id in conjunction with \
---log-slave-updates is impossible, it would lead to infinite loops in this \
-server.");
+      sql_print_error("using --replicate-same-server-id in conjunction with "
+                      "--log-slave-updates is impossible, it would lead to "
+                      "infinite loops in this server.");
       unireg_abort(1);
     }
     else
-      sql_print_warning("using --replicate-same-server-id in conjunction with \
---log-slave-updates would lead to infinite loops in this server. However this \
-will be ignored as the --log-bin option is not defined.");
+      sql_print_warning("using --replicate-same-server-id in conjunction with "
+                        "--log-slave-updates would lead to infinite loops in "
+                        "this server. However this will be ignored as the "
+                        "--log-bin option is not defined.");
   }
 #endif
 
@@ -4935,8 +4994,8 @@ will be ignored as the --log-bin option is not defined.");
     if (opt_bin_logname[0] && 
         opt_bin_logname[strlen(opt_bin_logname) - 1] == FN_LIBCHAR)
     {
-      sql_print_error("Path '%s' is a directory name, please specify \
-a file name for --log-bin option", opt_bin_logname);
+      sql_print_error("Path '%s' is a directory name, please specify "
+                      "a file name for --log-bin option", opt_bin_logname);
       unireg_abort(1);
     }
 
@@ -4946,8 +5005,9 @@ a file name for --log-bin option", opt_bin_logname);
         opt_binlog_index_name[strlen(opt_binlog_index_name) - 1] 
         == FN_LIBCHAR)
     {
-      sql_print_error("Path '%s' is a directory name, please specify \
-a file name for --log-bin-index option", opt_binlog_index_name);
+      sql_print_error("Path '%s' is a directory name, please specify "
+                      "a file name for --log-bin-index option",
+                      opt_binlog_index_name);
       unireg_abort(1);
     }
 
@@ -4975,13 +5035,20 @@ a file name for --log-bin-index option", opt_binlog_index_name);
       opt_bin_logname= my_once_strdup(buf, MYF(MY_WME));
   }
 
-    /*
-      Wsrep initialization must happen at this point, because:
-      - opt_bin_logname must be known when starting replication
-        since SST may need it
-      - SST may modify binlog index file, so it must be opened
-        after SST has happened
-     */
+  /*
+    Wsrep initialization must happen at this point, because:
+    - opt_bin_logname must be known when starting replication
+      since SST may need it
+    - SST may modify binlog index file, so it must be opened
+      after SST has happened
+
+    We also (unconditionally) initialize wsrep LOCKs and CONDs.
+    It is because they are used while accessing wsrep system
+    variables even when a wsrep provider is not loaded.
+  */
+
+  wsrep_thr_init();
+
   if (WSREP_ON && !wsrep_recovery && !opt_abort) /* WSREP BEFORE SE */
   {
     if (opt_bootstrap) // bootsrap option given - disable wsrep functionality
@@ -5024,6 +5091,45 @@ a file name for --log-bin-index option", opt_binlog_index_name);
       unireg_abort(1);
     }
   }
+
+  if (opt_bin_log)
+  {
+    log_bin_basename=
+      rpl_make_log_name(opt_bin_logname, pidfile_name,
+                        opt_bin_logname ? "" : "-bin");
+    log_bin_index=
+      rpl_make_log_name(opt_binlog_index_name, log_bin_basename, ".index");
+    if (log_bin_basename == NULL || log_bin_index == NULL)
+    {
+      sql_print_error("Unable to create replication path names:"
+                      " out of memory or path names too long"
+                      " (path name exceeds " STRINGIFY_ARG(FN_REFLEN)
+                      " or file name exceeds " STRINGIFY_ARG(FN_LEN) ").");
+      unireg_abort(1);
+    }
+  }
+
+#ifndef EMBEDDED_LIBRARY
+  DBUG_PRINT("debug",
+             ("opt_bin_logname: %s, opt_relay_logname: %s, pidfile_name: %s",
+              opt_bin_logname, opt_relay_logname, pidfile_name));
+  if (opt_relay_logname)
+  {
+    relay_log_basename=
+      rpl_make_log_name(opt_relay_logname, pidfile_name,
+                        opt_relay_logname ? "" : "-relay-bin");
+    relay_log_index=
+      rpl_make_log_name(opt_relaylog_index_name, relay_log_basename, ".index");
+    if (relay_log_basename == NULL || relay_log_index == NULL)
+    {
+      sql_print_error("Unable to create replication path names:"
+                      " out of memory or path names too long"
+                      " (path name exceeds " STRINGIFY_ARG(FN_REFLEN)
+                      " or file name exceeds " STRINGIFY_ARG(FN_LEN) ").");
+      unireg_abort(1);
+    }
+  }
+#endif /* !EMBEDDED_LIBRARY */
 
   /* call ha_init_key_cache() on all key caches to init them */
   process_key_caches(&ha_init_key_cache, 0);
@@ -5221,6 +5327,7 @@ a file name for --log-bin-index option", opt_binlog_index_name);
   init_global_client_stats();
   if (!opt_bootstrap)
     servers_init(0);
+  init_status_vars();
   DBUG_RETURN(0);
 }
 
@@ -5470,6 +5577,8 @@ int mysqld_main(int argc, char **argv)
       pfs_param.m_hints.m_table_open_cache= tc_size;
       pfs_param.m_hints.m_max_connections= max_connections;
       pfs_param.m_hints.m_open_files_limit= open_files_limit;
+      /* the performance schema digest size is the same as the SQL layer */
+      pfs_param.m_max_digest_length= max_digest_length;
       PSI_hook= initialize_performance_schema(&pfs_param);
       if (PSI_hook == NULL)
       {
@@ -5687,7 +5796,6 @@ int mysqld_main(int argc, char **argv)
 #endif
   }
 
-  init_status_vars();
   if (opt_bootstrap) /* If running with bootstrap, do not start replication. */
     opt_skip_slave_start= 1;
 
@@ -7207,6 +7315,11 @@ struct my_option my_long_options[]=
    "File that holds the names for last binary log files.",
    &opt_binlog_index_name, &opt_binlog_index_name, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"relay-log-index", 0,
+   "The location and name to use for the file that keeps a list of the last "
+   "relay logs",
+   &opt_relaylog_index_name, &opt_relaylog_index_name, 0, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"log-isam", OPT_ISAM_LOG, "Log all MyISAM changes to file.",
    &myisam_log_filename, &myisam_log_filename, 0, GET_STR,
    OPT_ARG, 0, 0, 0, 0, 0, 0},
@@ -8425,16 +8538,15 @@ static void usage(void)
   else
   {
 #ifdef __WIN__
-  puts("NT and Win32 specific options:\n\
-  --install                     Install the default service (NT).\n\
-  --install-manual              Install the default service started manually (NT).\n\
-  --install service_name        Install an optional service (NT).\n\
-  --install-manual service_name Install an optional service started manually (NT).\n\
-  --remove                      Remove the default service from the service list (NT).\n\
-  --remove service_name         Remove the service_name from the service list (NT).\n\
-  --enable-named-pipe           Only to be used for the default server (NT).\n\
-  --standalone                  Dummy option to start as a standalone server (NT).\
-");
+  puts("NT and Win32 specific options:\n"
+       "  --install                     Install the default service (NT).\n"
+       "  --install-manual              Install the default service started manually (NT).\n"
+       "  --install service_name        Install an optional service (NT).\n"
+       "  --install-manual service_name Install an optional service started manually (NT).\n"
+       "  --remove                      Remove the default service from the service list (NT).\n"
+       "  --remove service_name         Remove the service_name from the service list (NT).\n"
+       "  --enable-named-pipe           Only to be used for the default server (NT).\n"
+       "  --standalone                  Dummy option to start as a standalone server (NT).");
   puts("");
 #endif
   print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
@@ -8446,14 +8558,12 @@ static void usage(void)
 
   if (! plugins_are_initialized)
   {
-    puts("\n\
-Plugins have parameters that are not reflected in this list\n\
-because execution stopped before plugins were initialized.");
+    puts("\nPlugins have parameters that are not reflected in this list"
+         "\nbecause execution stopped before plugins were initialized.");
   }
 
-  puts("\n\
-To see what values a running MySQL server is using, type\n\
-'mysqladmin variables' instead of 'mysqld --verbose --help'.");
+  puts("\nTo see what values a running MySQL server is using, type"
+       "\n'mysqladmin variables' instead of 'mysqld --verbose --help'.");
   }
   DBUG_VOID_RETURN;
 }
@@ -8562,6 +8672,8 @@ static int mysql_init_variables(void)
   report_user= report_password = report_host= 0;	/* TO BE DELETED */
   opt_relay_logname= opt_relaylog_index_name= 0;
   slave_retried_transactions= 0;
+  log_bin_basename= NULL;
+  log_bin_index= NULL;
 
   /* Variables in libraries */
   charsets_dir= 0;
@@ -8784,9 +8896,13 @@ mysqld_get_one_option(int optid, const struct my_option *opt, char *argument)
     if (log_error_file_ptr != disabled_my_option)
       SYSVAR_AUTOSIZE(log_error_file_ptr, opt_log_basename);
 
+    /* General log file */
     make_default_log_name(&opt_logname, ".log", false);
+    /* Slow query log file */
     make_default_log_name(&opt_slow_logname, "-slow.log", false);
+    /* Binary log file */
     make_default_log_name(&opt_bin_logname, "-bin", true);
+    /* Binary log index file */
     make_default_log_name(&opt_binlog_index_name, "-bin.index", true);
     mark_sys_var_value_origin(&opt_logname, sys_var::AUTO);
     mark_sys_var_value_origin(&opt_slow_logname, sys_var::AUTO);
@@ -8795,15 +8911,17 @@ mysqld_get_one_option(int optid, const struct my_option *opt, char *argument)
       return 1;
 
 #ifdef HAVE_REPLICATION
+    /* Relay log file */
     make_default_log_name(&opt_relay_logname, "-relay-bin", true);
+    /* Relay log index file */
     make_default_log_name(&opt_relaylog_index_name, "-relay-bin.index", true);
     mark_sys_var_value_origin(&opt_relay_logname, sys_var::AUTO);
-    mark_sys_var_value_origin(&opt_relaylog_index_name, sys_var::AUTO);
     if (!opt_relay_logname || !opt_relaylog_index_name)
       return 1;
 #endif
 
     SYSVAR_AUTOSIZE(pidfile_name_ptr, pidfile_name);
+    /* PID file */
     strmake(pidfile_name, argument, sizeof(pidfile_name)-5);
     strmov(fn_ext(pidfile_name),".pid");
 
@@ -9426,9 +9544,6 @@ void set_server_version(void)
 #ifdef EMBEDDED_LIBRARY
   end= strmov(end, "-embedded");
 #endif
-#ifdef WITH_WSREP
-  end= strmov(end, "-wsrep");
-#endif
 #ifndef DBUG_OFF
   if (!strstr(MYSQL_SERVER_SUFFIX_STR, "-debug"))
     end= strmov(end, "-debug");
@@ -9903,6 +10018,7 @@ PSI_stage_info stage_waiting_for_work_from_sql_thread= { 0, "Waiting for work fr
 PSI_stage_info stage_waiting_for_prior_transaction_to_commit= { 0, "Waiting for prior transaction to commit", 0};
 PSI_stage_info stage_waiting_for_prior_transaction_to_start_commit= { 0, "Waiting for prior transaction to start commit before starting next transaction", 0};
 PSI_stage_info stage_waiting_for_room_in_worker_thread= { 0, "Waiting for room in worker thread event queue", 0};
+PSI_stage_info stage_waiting_for_workers_idle= { 0, "Waiting for worker threads to be idle", 0};
 PSI_stage_info stage_master_gtid_wait_primary= { 0, "Waiting in MASTER_GTID_WAIT() (primary waiter)", 0};
 PSI_stage_info stage_master_gtid_wait= { 0, "Waiting in MASTER_GTID_WAIT()", 0};
 PSI_stage_info stage_gtid_wait_other_connection= { 0, "Waiting for other master connection to process GTID received on multiple master connections", 0};

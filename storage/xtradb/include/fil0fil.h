@@ -138,8 +138,11 @@ extern fil_addr_t	fil_addr_null;
 #define FIL_PAGE_DATA		38	/*!< start of the data on the page */
 /* Following are used when page compression is used */
 #define FIL_PAGE_COMPRESSED_SIZE 2      /*!< Number of bytes used to store
- 					actual payload data size on
- 					compressed pages. */
+					actual payload data size on
+					compressed pages. */
+#define FIL_PAGE_COMPRESSION_METHOD_SIZE 2
+					/*!< Number of bytes used to store
+					actual compression method. */
 /* @} */
 /** File page trailer @{ */
 #define FIL_PAGE_END_LSN_OLD_CHKSUM 8	/*!< the low 4 bytes of this are used
@@ -150,6 +153,8 @@ extern fil_addr_t	fil_addr_null;
 /* @} */
 
 /** File page types (values of FIL_PAGE_TYPE) @{ */
+#define FIL_PAGE_PAGE_COMPRESSED_ENCRYPTED 37401 /*!< Page is compressed and
+						 then encrypted */
 #define FIL_PAGE_PAGE_COMPRESSED 34354  /*!< Page compressed page */
 #define FIL_PAGE_INDEX		17855	/*!< B-tree node */
 #define FIL_PAGE_UNDO_LOG	2	/*!< Undo log page */
@@ -1283,6 +1288,13 @@ fil_system_exit(void);
 /*******************************************************************//**
 Returns the table space by a given id, NULL if not found. */
 fil_space_t*
+fil_space_found_by_id(
+/*==================*/
+	ulint	id);	/*!< in: space id */
+
+/*******************************************************************//**
+Returns the table space by a given id, NULL if not found. */
+fil_space_t*
 fil_space_get_by_id(
 /*================*/
 	ulint	id);	/*!< in: space id */
@@ -1292,15 +1304,32 @@ Get id of first tablespace or ULINT_UNDEFINED if none */
 UNIV_INTERN
 ulint
 fil_get_first_space();
+/*=================*/
 
 /******************************************************************
 Get id of next tablespace or ULINT_UNDEFINED if none */
 UNIV_INTERN
 ulint
 fil_get_next_space(
+/*===============*/
 	ulint id);      /*!< in: space id */
 
-#endif
+/******************************************************************
+Get id of first tablespace that has node or ULINT_UNDEFINED if none */
+UNIV_INTERN
+ulint
+fil_get_first_space_safe();
+/*======================*/
+
+/******************************************************************
+Get id of next tablespace that has node or ULINT_UNDEFINED if none */
+UNIV_INTERN
+ulint
+fil_get_next_space_safe(
+/*====================*/
+	ulint	id);	/*!< in: previous space id */
+
+#endif /*  UNIV_INNOCHECKSUM */
 
 /*******************************************************************//**
 Return space flags */

@@ -49,8 +49,9 @@
 #include <base64.h>
 #include <my_bitmap.h>
 #include "rpl_utility.h"
+#include "sql_digest.h"
 
-#define my_b_write_string(A, B) my_b_write((A), (B), (uint) (sizeof(B) - 1))
+#define my_b_write_string(A, B) my_b_write((A), (uchar*)(B), (uint) (sizeof(B) - 1))
 
 using std::max;
 
@@ -339,10 +340,6 @@ private:
   flag_set m_flags;
 };
 
-#ifndef DBUG_OFF
-uint debug_not_change_ts_if_art_event= 1; // bug#29309 simulation
-#endif
-
 /*
   pretty_print_str()
 */
@@ -356,13 +353,13 @@ static void pretty_print_str(IO_CACHE* cache, const char* str, int len)
   {
     char c;
     switch ((c=*str++)) {
-    case '\n': my_b_write(cache, "\\n", 2); break;
-    case '\r': my_b_write(cache, "\\r", 2); break;
-    case '\\': my_b_write(cache, "\\\\", 2); break;
-    case '\b': my_b_write(cache, "\\b", 2); break;
-    case '\t': my_b_write(cache, "\\t", 2); break;
-    case '\'': my_b_write(cache, "\\'", 2); break;
-    case 0   : my_b_write(cache, "\\0", 2); break;
+    case '\n': my_b_write(cache, (uchar*)"\\n", 2); break;
+    case '\r': my_b_write(cache, (uchar*)"\\r", 2); break;
+    case '\\': my_b_write(cache, (uchar*)"\\\\", 2); break;
+    case '\b': my_b_write(cache, (uchar*)"\\b", 2); break;
+    case '\t': my_b_write(cache, (uchar*)"\\t", 2); break;
+    case '\'': my_b_write(cache, (uchar*)"\\'", 2); break;
+    case 0   : my_b_write(cache, (uchar*)"\\0", 2); break;
     default:
       my_b_write_byte(cache, c);
       break;
@@ -758,7 +755,7 @@ static void print_set_option(IO_CACHE* file, uint32 bits_changed,
   if (bits_changed & option)
   {
     if (*need_comma)
-      my_b_write(file, ", ", 2);
+      my_b_write(file, (uchar*)", ", 2);
     my_b_printf(file, "%s=%d", name, MY_TEST(flags & option));
     *need_comma= 1;
   }
@@ -872,7 +869,7 @@ Log_event::Log_event()
 
 Log_event::Log_event(const char* buf,
                      const Format_description_log_event* description_event)
-  :temp_buf(0), cache_type(Log_event::EVENT_INVALID_CACHE),
+  :temp_buf(0), exec_time(0), cache_type(Log_event::EVENT_INVALID_CACHE),
     crc(0), checksum_alg(BINLOG_CHECKSUM_ALG_UNDEF)
 {
 #ifndef MYSQL_CLIENT
@@ -963,29 +960,12 @@ int Log_event::do_update_pos(rpl_group_info *rgi)
   if (rli)
   {
     /*
-      bug#29309 simulation: resetting the flag to force
-      wrong behaviour of artificial event to update
-      rli->last_master_timestamp for only one time -
-      the first FLUSH LOGS in the test.
-    */
-    DBUG_EXECUTE_IF("let_first_flush_log_change_timestamp",
-                    if (debug_not_change_ts_if_art_event == 1
-                        && is_artificial_event())
-                      debug_not_change_ts_if_art_event= 0; );
-    /*
       In parallel execution, delay position update for the events that are
       not part of event groups (format description, rotate, and such) until
       the actual event execution reaches that point.
     */
     if (!rgi->is_parallel_exec || is_group_event(get_type_code()))
-      rli->stmt_done(log_pos,
-                     (is_artificial_event() &&
-                      IF_DBUG(debug_not_change_ts_if_art_event > 0, 1) ?
-                      0 : when),
-                     thd, rgi);
-    DBUG_EXECUTE_IF("let_first_flush_log_change_timestamp",
-                    if (debug_not_change_ts_if_art_event == 0)
-                      debug_not_change_ts_if_art_event= 2; );
+      rli->stmt_done(log_pos, thd, rgi);
   }
   DBUG_RETURN(0);                                  // Cannot fail currently
 }
@@ -1817,7 +1797,7 @@ static void hexdump_minimal_header_to_io_cache(IO_CACHE *file,
 
   DBUG_ASSERT(static_cast<size_t>(emit_buf_written) < sizeof(emit_buf));
   my_b_write(file, reinterpret_cast<uchar*>(emit_buf), emit_buf_written);
-  my_b_write(file, "#\n", 2);
+  my_b_write(file, (uchar*)"#\n", 2);
 }
 
 
@@ -1933,7 +1913,7 @@ static void hexdump_data_to_io_cache(IO_CACHE *file,
     my_b_write(file, reinterpret_cast<uchar*>(emit_buffer),
                c - emit_buffer);
   }
-  my_b_write(file, "#\n", 2);
+  my_b_write(file, (uchar*)"#\n", 2);
 }
 
 /*
@@ -1990,7 +1970,7 @@ void Log_event::print_header(IO_CACHE* file,
       Prefix the next line so that the output from print_helper()
       will appear as a comment.
     */
-    my_b_write(file, "# Event: ", 9);
+    my_b_write(file, (uchar*)"# Event: ", 9);
   }
   DBUG_VOID_RETURN;
 }
@@ -2016,9 +1996,9 @@ my_b_write_quoted(IO_CACHE *file, const uchar *ptr, uint length)
     if (*s > 0x1F)
       my_b_write_byte(file, *s);
     else if (*s == '\'')
-      my_b_write(file, "\\'", 2);
+      my_b_write(file, (uchar*)"\\'", 2);
     else if (*s == '\\')
-      my_b_write(file, "\\\\", 2);
+      my_b_write(file, (uchar*)"\\\\", 2);
     else
     {
       uchar hex[10];
@@ -2041,7 +2021,7 @@ static void
 my_b_write_bit(IO_CACHE *file, const uchar *ptr, uint nbits)
 {
   uint bitnum, nbits8= ((nbits + 7) / 8) * 8, skip_bits= nbits8 - nbits;
-  my_b_write(file, "b'", 2);
+  my_b_write(file, (uchar*)"b'", 2);
   for (bitnum= skip_bits ; bitnum < nbits8; bitnum++)
   {
     int is_set= (ptr[(bitnum) / 8] >> (7 - bitnum % 8))  & 0x01;
@@ -2178,7 +2158,7 @@ log_event_print_value(IO_CACHE *file, const uchar *ptr,
       size_t length;
       longlong si= sint8korr(ptr);
       length= (longlong10_to_str(si, tmp, -10) - tmp);
-      my_b_write(file, tmp, length);
+      my_b_write(file, (uchar*)tmp, length);
       if (si < 0)
       {
         ulonglong ui= uint8korr(ptr);
@@ -2207,7 +2187,7 @@ log_event_print_value(IO_CACHE *file, const uchar *ptr,
         pos+= sprintf(pos, "%09d.", dec.buf[i]);
       pos+= sprintf(pos, "%09d", dec.buf[i]);
       length= (uint) (pos - buff);
-      my_b_write(file, buff, length);
+      my_b_write(file, (uchar*)buff, length);
       my_snprintf(typestr, typestr_length, "DECIMAL(%d,%d)",
                   precision, decimals);
       return bin_size;
@@ -2259,7 +2239,7 @@ log_event_print_value(IO_CACHE *file, const uchar *ptr,
       struct timeval tm;
       my_timestamp_from_binary(&tm, ptr, meta);
       int buflen= my_timeval_to_str(&tm, buf, meta);
-      my_b_write(file, buf, buflen);
+      my_b_write(file, (uchar*)buf, buflen);
       my_snprintf(typestr, typestr_length, "TIMESTAMP(%d)", meta);
       return my_timestamp_binary_length(meta);
     }
@@ -2497,7 +2477,7 @@ Rows_log_event::print_verbose_one_row(IO_CACHE *file, table_def *td,
 
     if (print_event_info->verbose > 1)
     {
-      my_b_write(file, " /* ", 4);
+      my_b_write(file, (uchar*)" /* ", 4);
 
       if (typestr[0])
         my_b_printf(file, "%s ", typestr);
@@ -2507,7 +2487,7 @@ Rows_log_event::print_verbose_one_row(IO_CACHE *file, table_def *td,
       my_b_printf(file, "meta=%d nullable=%d is_null=%d ",
                   td->field_metadata(i),
                   td->maybe_null(i), is_null);
-      my_b_write(file, "*/", 2);
+      my_b_write(file, (uchar*)"*/", 2);
     }
     
     my_b_write_byte(file, '\n');
@@ -4276,12 +4256,17 @@ int Query_log_event::do_apply_event(rpl_group_info *rgi,
       Parser_state parser_state;
       if (!parser_state.init(thd, thd->query(), thd->query_length()))
       {
+        DBUG_ASSERT(thd->m_digest == NULL);
+        thd->m_digest= & thd->m_digest_state;
+        DBUG_ASSERT(thd->m_statement_psi == NULL);
         thd->m_statement_psi= MYSQL_START_STATEMENT(&thd->m_statement_state,
                                                     stmt_info_rpl.m_key,
                                                     thd->db, thd->db_length,
                                                     thd->charset());
         THD_STAGE_INFO(thd, stage_init);
         MYSQL_SET_STATEMENT_TEXT(thd->m_statement_psi, thd->query(), thd->query_length());
+        if (thd->m_digest != NULL)
+          thd->m_digest->reset(thd->m_token_array, max_digest_length);
 
         thd->enable_slow_log= thd->variables.sql_log_slow;
         mysql_parse(thd, thd->query(), thd->query_length(), &parser_state);
@@ -4364,11 +4349,10 @@ compare_errors:
         !ignored_error_code(expected_error))
     {
       rli->report(ERROR_LEVEL, 0, rgi->gtid_info(),
-                      "\
-Query caused different errors on master and slave.     \
-Error on master: message (format)='%s' error code=%d ; \
-Error on slave: actual message='%s', error code=%d. \
-Default database: '%s'. Query: '%s'",
+                      "Query caused different errors on master and slave.     "
+                      "Error on master: message (format)='%s' error code=%d ; "
+                      "Error on slave: actual message='%s', error code=%d. "
+                      "Default database: '%s'. Query: '%s'",
                       ER_SAFE(expected_error),
                       expected_error,
                       actual_error ? thd->get_stmt_da()->message() : "no error",
@@ -4464,6 +4448,7 @@ end:
   /* Mark the statement completed. */
   MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
   thd->m_statement_psi= NULL;
+  thd->m_digest= NULL;
 
   /*
     As a disk space optimization, future masters will not log an event for
@@ -5734,7 +5719,7 @@ void Load_log_event::set_fields(const char* affected_db,
   const char* field = fields;
   for (i= 0; i < num_fields; i++)
   {
-    field_list.push_back(new Item_field(context,
+    field_list.push_back(new Item_field(thd, context,
                                         affected_db, table_name, field));
     field+= field_lens[i]  + 1;
   }
@@ -10150,7 +10135,7 @@ Rows_log_event::do_update_pos(rpl_group_info *rgi)
       Step the group log position if we are not in a transaction,
       otherwise increase the event log position.
     */
-    rli->stmt_done(log_pos, when, thd, rgi);
+    rli->stmt_done(log_pos, thd, rgi);
     /*
       Clear any errors in thd->net.last_err*. It is not known if this is
       needed or not. It is believed that any errors that may exist in

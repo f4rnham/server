@@ -1286,7 +1286,7 @@ page_hash lock is acquired in the specified lock mode. Otherwise,
 mode value is ignored. It is up to the caller to release the
 lock. If the block is found and the lock is NULL then the page_hash
 lock is released by this function.
-@return	block, NULL if not found */
+@return	block, NULL if not found, or watch sentinel (if watch is true) */
 UNIV_INLINE
 buf_page_t*
 buf_page_hash_get_locked(
@@ -1302,9 +1302,11 @@ buf_page_hash_get_locked(
 					found. NULL otherwise. If NULL
 					is passed then the hash_lock
 					is released by this function */
-	ulint		lock_mode);	/*!< in: RW_LOCK_EX or
+	ulint		lock_mode,	/*!< in: RW_LOCK_EX or
 					RW_LOCK_SHARED. Ignored if
 					lock == NULL */
+	bool		watch = false);	/*!< in: if true, return watch
+					sentinel also. */
 /******************************************************************//**
 Returns the control block of a file page, NULL if not found.
 If the block is found and lock is not NULL then the appropriate
@@ -1344,6 +1346,8 @@ buf_page_hash_get_low() function.
 	buf_page_hash_get_locked(b, s, o, l, RW_LOCK_EX)
 #define buf_page_hash_get(b, s, o)				\
 	buf_page_hash_get_locked(b, s, o, NULL, 0)
+#define buf_page_get_also_watch(b, s, o)			\
+	buf_page_hash_get_locked(b, s, o, NULL, 0, true)
 
 #define buf_block_hash_get_s_locked(b, s, o, l)			\
 	buf_block_hash_get_locked(b, s, o, l, RW_LOCK_SHARED)
@@ -1473,9 +1477,9 @@ UNIV_INTERN
 byte*
 buf_page_encrypt_before_write(
 /*==========================*/
-	buf_page_t* page, /*!< in/out: buffer page to be flushed */
-	const byte* frame,
-	ulint space_id);
+	buf_page_t*	page,		/*!< in/out: buffer page to be flushed */
+	byte*		frame,		/*!< in: src frame */
+	ulint		space_id);	/*!< in: space id */
 
 /**********************************************************************
 The hook that is called after page is written to disk.
@@ -1530,6 +1534,9 @@ typedef struct {
 					can be read while it's being flushed */
 	byte*		comp_buf_free;	/*!< for compression, allocated
 					buffer that is then alligned */
+	byte*		out_buf;	/*!< resulting buffer after
+					encryption/compression. This is a
+					pointer and not allocated. */
 } buf_tmp_buffer_t;
 
 /** The common buffer control block structure

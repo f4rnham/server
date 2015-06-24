@@ -1,6 +1,6 @@
 /*
-   Copyright (c) 2000, 2014, Oracle and/or its affiliates.
-   Copyright (c) 2010, 2014, Monty Program Ab.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -62,6 +62,7 @@
 #include "keycaches.h"
 #include "set_var.h"
 #include "rpl_mi.h"
+#include "lex_token.h"
 
 /* this is to get the bison compilation windows warnings out */
 #ifdef _MSC_VER
@@ -480,7 +481,7 @@ set_trigger_new_row(THD *thd, LEX_STRING *name, Item *val)
                lex->trg_chistics.event == TRG_EVENT_UPDATE));
 
   trg_fld= new (thd->mem_root)
-            Item_trigger_field(lex->current_context(),
+            Item_trigger_field(thd, lex->current_context(),
                                Item_trigger_field::NEW_ROW,
                                name->str, UPDATE_ACL, FALSE);
 
@@ -1370,6 +1371,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b, ulong *yystacksize);
 %token  MULTIPOINT
 %token  MULTIPOLYGON
 %token  MUTEX_SYM
+%token  MYSQL_SYM
 %token  MYSQL_ERRNO_SYM
 %token  NAMES_SYM                     /* SQL-2003-N */
 %token  NAME_SYM                      /* SQL-2003-N */
@@ -7094,6 +7096,7 @@ alter:
           ALTER
           {
             Lex->name= null_lex_str;
+            Lex->only_view= FALSE;
             Lex->sql_command= SQLCOM_ALTER_TABLE;
             Lex->duplicates= DUP_ERROR; 
             Lex->select_lex.init_order();
@@ -7969,7 +7972,7 @@ opt_checksum_type:
         ;
 
 repair:
-          REPAIR opt_no_write_to_binlog table_or_tables
+          REPAIR opt_no_write_to_binlog table_or_view
           {
             LEX *lex=Lex;
             lex->sql_command = SQLCOM_REPAIR;
@@ -7982,6 +7985,15 @@ repair:
           table_list opt_mi_repair_type
           {
             LEX* lex= thd->lex;
+            if ((lex->only_view &&
+                 ((lex->check_opt.flags & (T_QUICK | T_EXTEND)) ||
+                   (lex->check_opt.sql_flags & TT_USEFRM))) ||
+                (!lex->only_view &&
+                 (lex->check_opt.sql_flags & TT_FROM_MYSQL)))
+            {
+              my_parse_error(ER(ER_SYNTAX_ERROR));
+              MYSQL_YYABORT;
+            }
             DBUG_ASSERT(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root) Sql_cmd_repair_table();
             if (lex->m_sql_cmd == NULL)
@@ -8003,6 +8015,7 @@ mi_repair_type:
           QUICK        { Lex->check_opt.flags|= T_QUICK; }
         | EXTENDED_SYM { Lex->check_opt.flags|= T_EXTEND; }
         | USE_FRM      { Lex->check_opt.sql_flags|= TT_USEFRM; }
+        | FROM MYSQL_SYM { Lex->check_opt.sql_flags|= TT_FROM_MYSQL; }
         ;
 
 analyze:
@@ -8122,7 +8135,7 @@ binlog_base64_event:
         ;
 
 check:
-          CHECK_SYM table_or_tables
+          CHECK_SYM table_or_view
           {
             LEX *lex=Lex;
 
@@ -8140,6 +8153,13 @@ check:
           table_list opt_mi_check_type
           {
             LEX* lex= thd->lex;
+            if (lex->only_view &&
+                (lex->check_opt.flags & (T_QUICK | T_FAST | T_EXTEND |
+                                         T_CHECK_ONLY_CHANGED)))
+            {
+              my_parse_error(ER(ER_SYNTAX_ERROR));
+              MYSQL_YYABORT;
+            }
             DBUG_ASSERT(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root) Sql_cmd_check_table();
             if (lex->m_sql_cmd == NULL)
@@ -8247,6 +8267,7 @@ keycache:
             LEX *lex=Lex;
             lex->sql_command= SQLCOM_ASSIGN_TO_KEYCACHE;
             lex->ident= $6;
+            lex->only_view= FALSE;
           }
         ;
 
@@ -8291,6 +8312,7 @@ preload:
             LEX *lex=Lex;
             lex->sql_command=SQLCOM_PRELOAD_KEYS;
             lex->alter_info.reset();
+            lex->only_view= FALSE;
           }
           preload_list_or_parts
           {}
@@ -8551,7 +8573,7 @@ select_item_list:
         | '*'
           {
             Item *item= new (thd->mem_root)
-                          Item_field(&thd->lex->current_select->context,
+                          Item_field(thd, &thd->lex->current_select->context,
                                      NULL, NULL, "*");
             if (item == NULL)
               MYSQL_YYABORT;
@@ -8803,7 +8825,7 @@ bool_pri:
           }
         | bool_pri comp_op predicate %prec EQ
           {
-            $$= (*$2)(0)->create(thd, $1, $3);
+            $$= (*$2)(0)->create(thd->mem_root, $1, $3);
             if ($$ == NULL)
               MYSQL_YYABORT;
           }
@@ -9325,14 +9347,14 @@ simple_expr:
               my_error(ER_WRONG_COLUMN_NAME, MYF(0), il->my_name()->str);
               MYSQL_YYABORT;
             }
-            $$= new (thd->mem_root) Item_default_value(Lex->current_context(),
+            $$= new (thd->mem_root) Item_default_value(thd, Lex->current_context(),
                                                          $3);
             if ($$ == NULL)
               MYSQL_YYABORT;
           }
         | VALUES '(' simple_ident_nospvar ')'
           {
-            $$= new (thd->mem_root) Item_insert_value(Lex->current_context(),
+            $$= new (thd->mem_root) Item_insert_value(thd, Lex->current_context(),
                                                         $3);
             if ($$ == NULL)
               MYSQL_YYABORT;
@@ -10174,7 +10196,8 @@ udf_expr:
                parse it out. If we hijack the input stream with
                remember_name we may get quoted or escaped names.
             */
-            else if ($2->type() != Item::FIELD_ITEM)
+            else if ($2->type() != Item::FIELD_ITEM &&
+                     $2->type() != Item::REF_ITEM /* For HAVING */ )
               $2->set_name($1, (uint) ($3 - $1), thd->charset());
             $$= $2;
           }
@@ -11593,7 +11616,7 @@ procedure_clause:
             lex->proc_list.first=0;
             lex->proc_list.next= &lex->proc_list.first;
             Item_field *item= new (thd->mem_root)
-                                Item_field(&lex->current_select->context,
+                                Item_field(thd, &lex->current_select->context,
                                            NULL, NULL, $2.str);
             if (item == NULL)
               MYSQL_YYABORT;
@@ -12128,7 +12151,7 @@ expr_or_default:
           expr { $$= $1;}
         | DEFAULT
           {
-            $$= new (thd->mem_root) Item_default_value(Lex->current_context());
+            $$= new (thd->mem_root) Item_default_value(thd, Lex->current_context());
             if ($$ == NULL)
               MYSQL_YYABORT;
           }
@@ -13476,6 +13499,13 @@ literal:
         | temporal_literal { $$= $1; }
         | NULL_SYM
           {
+            /*
+              For the digest computation, in this context only,
+              NULL is considered a literal, hence reduced to '?'
+              REDUCE:
+                TOK_GENERIC_VALUE := NULL_SYM
+            */
+            YYLIP->reduce_digest_token(TOK_GENERIC_VALUE, NULL_SYM);
             $$ = new (thd->mem_root) Item_null();
             if ($$ == NULL)
               MYSQL_YYABORT;
@@ -13611,7 +13641,7 @@ table_wild:
           ident '.' '*'
           {
             SELECT_LEX *sel= Select;
-            $$= new (thd->mem_root) Item_field(Lex->current_context(),
+            $$= new (thd->mem_root) Item_field(thd, Lex->current_context(),
                                                  NullS, $1.str, "*");
             if ($$ == NULL)
               MYSQL_YYABORT;
@@ -13622,7 +13652,7 @@ table_wild:
             SELECT_LEX *sel= Select;
             const char* schema= thd->client_capabilities & CLIENT_NO_SCHEMA ?
                                   NullS : $1.str;
-            $$= new (thd->mem_root) Item_field(Lex->current_context(),
+            $$= new (thd->mem_root) Item_field(thd, Lex->current_context(),
                                                schema,
                                                $3.str,"*");
             if ($$ == NULL)
@@ -13670,7 +13700,7 @@ simple_ident:
               if ((sel->parsing_place != IN_HAVING) ||
                   (sel->get_in_sum_expr() > 0))
               {
-                $$= new (thd->mem_root) Item_field(Lex->current_context(),
+                $$= new (thd->mem_root) Item_field(thd, Lex->current_context(),
                                                    NullS, NullS, $1.str);
               }
               else
@@ -13692,7 +13722,7 @@ simple_ident_nospvar:
             if ((sel->parsing_place != IN_HAVING) ||
                 (sel->get_in_sum_expr() > 0))
             {
-              $$= new (thd->mem_root) Item_field(Lex->current_context(),
+              $$= new (thd->mem_root) Item_field(thd, Lex->current_context(),
                                                  NullS, NullS, $1.str);
             }
             else
@@ -13743,7 +13773,7 @@ simple_ident_q:
               const bool read_only=
                 !(new_row && lex->trg_chistics.action_time == TRG_ACTION_BEFORE);
               trg_fld= new (thd->mem_root)
-                         Item_trigger_field(Lex->current_context(),
+                         Item_trigger_field(thd, Lex->current_context(),
                                             new_row ?
                                               Item_trigger_field::NEW_ROW:
                                               Item_trigger_field::OLD_ROW,
@@ -13773,7 +13803,7 @@ simple_ident_q:
               if ((sel->parsing_place != IN_HAVING) ||
                   (sel->get_in_sum_expr() > 0))
               {
-                $$= new (thd->mem_root) Item_field(Lex->current_context(),
+                $$= new (thd->mem_root) Item_field(thd, Lex->current_context(),
                                                    NullS, $1.str, $3.str);
               }
               else
@@ -13797,7 +13827,7 @@ simple_ident_q:
             if ((sel->parsing_place != IN_HAVING) ||
                 (sel->get_in_sum_expr() > 0))
             {
-              $$= new (thd->mem_root) Item_field(Lex->current_context(),
+              $$= new (thd->mem_root) Item_field(thd, Lex->current_context(),
                                                  NullS, $2.str, $4.str);
 
             }
@@ -13823,7 +13853,7 @@ simple_ident_q:
             if ((sel->parsing_place != IN_HAVING) ||
                 (sel->get_in_sum_expr() > 0))
             {
-              $$= new (thd->mem_root) Item_field(Lex->current_context(),
+              $$= new (thd->mem_root) Item_field(thd, Lex->current_context(),
                                                  schema,
                                                  $3.str, $5.str);
             }
@@ -14328,6 +14358,7 @@ keyword_sp:
         | MULTIPOINT               {}
         | MULTIPOLYGON             {}
         | MUTEX_SYM                {}
+        | MYSQL_SYM                {}
         | MYSQL_ERRNO_SYM          {}
         | NAME_SYM                 {}
         | NAMES_SYM                {}
@@ -15001,8 +15032,13 @@ lock:
         ;
 
 table_or_tables:
-          TABLE_SYM {}
-        | TABLES    {}
+          TABLE_SYM        { Lex->only_view= FALSE; }
+        | TABLES           { Lex->only_view= FALSE; }
+        ;
+
+table_or_view:
+          table_or_tables
+        | VIEW_SYM         { Lex->only_view= TRUE;  }
         ;
 
 table_lock_list:
@@ -15902,6 +15938,13 @@ subselect_end:
             */
             lex->current_select->select_n_where_fields+=
             child->select_n_where_fields;
+
+            /*
+              Aggregate functions in having clause may add fields to an outer
+              select. Count them also.
+            */
+            lex->current_select->select_n_having_items+=
+            child->select_n_having_items;
           }
         ;
 

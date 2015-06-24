@@ -48,9 +48,14 @@ static MYSQL_SYSVAR_STR(filekey, filekey,
   "Key to encrypt / decrypt the keyfile.",
   NULL, NULL, "");
 
+#ifdef HAVE_EncryptAes128Ctr
+#define recommendation  ", aes_ctr is the recommended one"
+#else
+#define recommendation  ""
+#endif
 static MYSQL_SYSVAR_ENUM(encryption_algorithm, encryption_algorithm,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
-  "Encryption algorithm to use, aes_ctr is the recommended one.",
+  "Encryption algorithm to use" recommendation ".",
   NULL, NULL, 0, &encryption_algorithm_typelib);
 
 static struct st_mysql_sys_var* settings[] = {
@@ -115,6 +120,32 @@ struct st_mariadb_encryption file_key_management_plugin= {
   0,0
 };
 
+#ifdef HAVE_EncryptAes128Gcm
+/*
+  use AES-CTR when cyphertext length must be the same as plaintext length,
+  and AES-GCM when cyphertext can be longer than plaintext.
+*/
+static int ctr_gcm_encrypt(const unsigned char* src, unsigned int slen,
+            unsigned char* dst, unsigned int* dlen,
+            const unsigned char* key, unsigned int klen,
+            const unsigned char* iv, unsigned int ivlen,
+            int no_padding, unsigned int keyid, unsigned int key_version)
+{
+  return (no_padding ? my_aes_encrypt_ctr : my_aes_encrypt_gcm)
+            (src, slen, dst, dlen, key, klen, iv, ivlen);
+}
+
+static int ctr_gcm_decrypt(const unsigned char* src, unsigned int slen,
+            unsigned char* dst, unsigned int* dlen,
+            const unsigned char* key, unsigned int klen,
+            const unsigned char* iv, unsigned int ivlen,
+            int no_padding, unsigned int keyid, unsigned int key_version)
+{
+  return (no_padding ? my_aes_decrypt_ctr : my_aes_decrypt_gcm)
+            (src, slen, dst, dlen, key, klen, iv, ivlen);
+}
+#endif
+
 static int file_key_management_plugin_init(void *p)
 {
   Parser parser(filename, filekey);
@@ -127,10 +158,15 @@ static int file_key_management_plugin_init(void *p)
     break;
 #ifdef HAVE_EncryptAes128Ctr
   case 1: // AES_CTR
+#ifdef HAVE_EncryptAes128Gcm
+    file_key_management_plugin.encrypt= ctr_gcm_encrypt;
+    file_key_management_plugin.decrypt= ctr_gcm_decrypt;
+#else
     file_key_management_plugin.encrypt=
       (encrypt_decrypt_func)my_aes_encrypt_ctr;
     file_key_management_plugin.decrypt=
       (encrypt_decrypt_func)my_aes_decrypt_ctr;
+#endif
     break;
 #endif
   default:

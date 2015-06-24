@@ -1,5 +1,5 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates.
-   Copyright (c) 2010, 2013 Monty Program Ab
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1100,7 +1100,7 @@ void close_thread_table(THD *thd, TABLE **table_ptr)
     critical section.
   */
   if (table->file != NULL)
-    table->file->unbind_psi();
+    MYSQL_UNBIND_TABLE(table->file);
 
   tc_release_table(table);
   DBUG_VOID_RETURN;
@@ -1635,8 +1635,8 @@ use_temporary_table(THD *thd, TABLE *table, TABLE **out_table)
         thread to another, we need to let the performance schema know that,
         for aggregates per thread to work properly.
       */
-      table->file->unbind_psi();
-      table->file->rebind_psi();
+      MYSQL_UNBIND_TABLE(table->file);
+      MYSQL_REBIND_TABLE(table->file);
     }
 #endif
   }
@@ -2530,7 +2530,7 @@ retry_share:
   if (table)
   {
     DBUG_ASSERT(table->file != NULL);
-    table->file->rebind_psi();
+    MYSQL_REBIND_TABLE(table->file);
   }
   else
   {
@@ -3486,7 +3486,7 @@ request_backoff_action(enum_open_table_action action_arg,
   if (action_arg != OT_REOPEN_TABLES && m_has_locks)
   {
     my_error(ER_LOCK_DEADLOCK, MYF(0));
-    mark_transaction_to_rollback(m_thd, true);
+    m_thd->mark_transaction_to_rollback(true);
     return TRUE;
   }
   /*
@@ -7012,7 +7012,7 @@ find_item_in_list(Item *find, List<Item> &items, uint *counter,
         Item_field for tables.
       */
       Item_ident *item_ref= (Item_ident *) item;
-      if (item_ref->name && item_ref->table_name &&
+      if (field_name && item_ref->name && item_ref->table_name &&
           !my_strcasecmp(system_charset_info, item_ref->name, field_name) &&
           !my_strcasecmp(table_alias_charset, item_ref->table_name,
                          table_name) &&

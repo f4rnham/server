@@ -1449,9 +1449,9 @@ UNIV_INTERN
 byte*
 buf_page_encrypt_before_write(
 /*==========================*/
-	buf_page_t* page, /*!< in/out: buffer page to be flushed */
-	const byte* frame,
-	ulint space_id);
+	buf_page_t*	page,		/*!< in/out: buffer page to be flushed */
+	byte*		frame,		/*!< in: src frame */
+	ulint		space_id);	/*!< in: space id */
 
 /**********************************************************************
 The hook that is called after page is written to disk.
@@ -1506,6 +1506,9 @@ typedef struct {
 					can be read while it's being flushed */
 	byte*		comp_buf_free;	/*!< for compression, allocated
 					buffer that is then alligned */
+	byte*		out_buf;	/*!< resulting buffer after
+					encryption/compression. This is a
+					pointer and not allocated. */
 } buf_tmp_buffer_t;
 
 /** The common buffer control block structure

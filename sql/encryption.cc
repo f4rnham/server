@@ -19,6 +19,8 @@
 #include "sql_plugin.h"
 #include <my_crypt.h>
 
+void init_io_cache_encryption();
+
 /* there can be only one encryption plugin enabled */
 static plugin_ref encryption_manager= 0;
 struct encryption_service_st encryption_handler;
@@ -79,6 +81,8 @@ int initialize_encryption_plugin(st_plugin_int *plugin)
   encryption_handler.encryption_key_get_latest_version_func=
     handle->get_latest_key_version; // must be the last
 
+  init_io_cache_encryption();
+
   return 0;
 }
 
@@ -100,6 +104,7 @@ int finalize_encryption_plugin(st_plugin_int *plugin)
   if (encryption_manager)
     plugin_unlock(NULL, encryption_manager);
   encryption_manager= 0;
+  init_io_cache_encryption();
   return 0;
 }
 
@@ -169,7 +174,13 @@ int do_crypt(const unsigned char* src, unsigned int slen,
   compile_time_assert(ENCRYPTION_SCHEME_KEY_INVALID ==
                       (int)ENCRYPTION_KEY_VERSION_INVALID);
 
-  DBUG_ASSERT(scheme->type == 1);
+  // Maybe temporal solution for MDEV-8173
+  // Rationale: scheme->type is currently global/object
+  // and when used here might not represent actual state
+  // of smaller granularity objects e.g. InnoDB page state
+  // as type is stored to tablespace (FIL) and could represent
+  // state where key rotation is trying to reach
+  //DBUG_ASSERT(scheme->type == 1);
 
   if (key_version == ENCRYPTION_KEY_VERSION_INVALID ||
       key_version == ENCRYPTION_KEY_NOT_ENCRYPTED)

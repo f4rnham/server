@@ -96,6 +96,9 @@ The following options may be given as the first argument:
  --bulk-insert-buffer-size=# 
  Size of tree cache used in bulk insert optimisation. Note
  that this is a limit per thread!
+ --changed-page-bitmaps[=name] 
+ Enable or disable CHANGED_PAGE_BITMAPS plugin. One of:
+ ON, OFF, FORCE (don't start if the plugin fails to load).
  --character-set-client-handshake 
  Don't ignore client side character set value sent during
  handshake.
@@ -163,8 +166,11 @@ The following options may be given as the first argument:
  Precision of the result of '/' operator will be increased
  on that value
  --encrypt-tmp-disk-tables 
- Encrypt tmp disk tables (created as part of query
- execution)
+ Encrypt temporary on-disk tables (created as part of
+ query execution)
+ --encrypt-tmp-files Encrypt temporary files (created for filesort, binary log
+ cache, etc)
+ (Defaults to on; use --skip-encrypt-tmp-files to disable.)
  --enforce-storage-engine=name 
  Force the use of a storage engine for new tables
  --event-scheduler[=name] 
@@ -411,6 +417,8 @@ The following options may be given as the first argument:
  Don't start more than this number of threads to handle
  INSERT DELAYED statements. If set to zero INSERT DELAYED
  will be not used
+ --max-digest-length=# 
+ Maximum length considered for digest text.
  --max-error-count=# Max number of errors/warnings to store for a statement
  --max-heap-table-size=# 
  Don't allow creation of heap tables bigger than this
@@ -1121,6 +1129,7 @@ binlog-optimize-thread-scheduling TRUE
 binlog-row-event-max-size 1024
 binlog-stmt-cache-size 32768
 bulk-insert-buffer-size 8388608
+changed-page-bitmaps ON
 character-set-client-handshake TRUE
 character-set-filesystem binary
 character-set-server latin1
@@ -1147,6 +1156,7 @@ delayed-insert-timeout 300
 delayed-queue-size 1000
 div-precision-increment 4
 encrypt-tmp-disk-tables FALSE
+encrypt-tmp-files TRUE
 enforce-storage-engine (No default value)
 event-scheduler OFF
 expensive-subquery-limit 100
@@ -1224,6 +1234,7 @@ max-binlog-stmt-cache-size 18446744073709547520
 max-connect-errors 100
 max-connections 151
 max-delayed-threads 20
+max-digest-length 1024
 max-error-count 64
 max-heap-table-size 16777216
 max-join-size 18446744073709551615

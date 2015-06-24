@@ -214,7 +214,7 @@ public:
   }
   
   /* Functions to get the statistics */
-  void print_json(Json_writer *writer);
+  void print_json_members(Json_writer *writer);
   
   ulonglong get_r_loops() { return r_loops; }
   double get_avg_examined_rows() 
@@ -283,6 +283,7 @@ typedef enum
 
 typedef enum 
 {
+  EXPL_ACTION_EOF, /* not-an-action */
   EXPL_ACTION_FILESORT,
   EXPL_ACTION_TEMPTABLE,
   EXPL_ACTION_REMOVE_DUPS,
@@ -333,60 +334,110 @@ class Sort_and_group_tracker : public Sql_alloc
 {
   enum { MAX_QEP_ACTIONS = 5 };
 
-  /* Query actions in the order they were made */
+  /* Query actions in the order they were made. */
   enum_qep_action qep_actions[MAX_QEP_ACTIONS];
-  uint n_actions;
   
-  /* 
-    Trackers for filesort operation. JOIN::exec() may need at most two sorting
-    operations.
-  */
-  Filesort_tracker filesort_tracker[2];
-  int cur_tracker;
-  
-  /* Information about temporary tables */
-  enum_tmp_table_use tmp_table_kind[2];
-  int cur_tmp_table;
+  /* Number for the next action */
+  int cur_action;
 
-  friend class Explain_select;
+  /*
+    Non-zero means there was already an execution which had
+    #total_actions actions
+  */
+  int total_actions;
+
+  int get_n_actions()
+  {
+    return total_actions? total_actions: cur_action;
+  }
+
+  /*
+    TRUE<=>there were executions which took different sort/buffer/de-duplicate
+    routes. The counter values are not meaningful.
+  */
+  bool varied_executions;
+
+  /* Details about query actions */
+  union 
+  {
+    Filesort_tracker *filesort_tracker;
+    enum_tmp_table_use tmp_table;
+  } 
+  qep_actions_data[MAX_QEP_ACTIONS];
+  
+  Filesort_tracker *dummy_fsort_tracker;
 
 public:
   Sort_and_group_tracker() : 
-    n_actions(0),
-    cur_tracker(0),
-    cur_tmp_table(0)
+    cur_action(0), total_actions(0), varied_executions(false),
+    dummy_fsort_tracker(NULL)
   {}
 
   /*************** Reporting interface ***************/
   /* Report that join execution is started */
   void report_join_start()
   {
-    n_actions= 0;
-    cur_tracker= 0;
-    cur_tmp_table= 0;
+    if (!total_actions && cur_action != 0)
+    {
+      /* This is a second execution */
+      total_actions= cur_action;
+    }
+    cur_action= 0;
   }
 
-  /* Report that a temporary table is created. */
-  void report_tmp_table(TABLE *tbl)
-  {
-    DBUG_ASSERT(n_actions < MAX_QEP_ACTIONS);
-    qep_actions[n_actions++]= EXPL_ACTION_TEMPTABLE;
+  /* 
+    Report that a temporary table is created. The next step is to write to the
+    this tmp. table
+  */
+  void report_tmp_table(TABLE *tbl);
 
-    DBUG_ASSERT(cur_tmp_table < 2);
-    cur_tmp_table++;
-  }
-
-  /* Report that we are doing a filesort. */
-  Filesort_tracker *report_sorting()
-  {
-    DBUG_ASSERT(n_actions < MAX_QEP_ACTIONS);
-    qep_actions[n_actions++]= EXPL_ACTION_FILESORT;
-
-    DBUG_ASSERT(cur_tracker < 2);
-    return &filesort_tracker[cur_tracker++];
-  }
-
+  /* 
+    Report that we are doing a filesort. 
+      @return 
+        Tracker object to be used with filesort
+  */
+  Filesort_tracker *report_sorting(THD *thd);
+  
+  /*
+    Report that remove_duplicates() is invoked [on a temp. table].
+    We don't collect any statistics on this operation, yet.
+  */
+  void report_duplicate_removal();
+  
+  friend class Iterator;
   /*************** Statistics retrieval interface ***************/
-  //enum_tmp_table_use get_tmp_table_type() { return join_result_tmp_table; }
+  bool had_varied_executions() { return varied_executions; }
+
+  class Iterator 
+  {
+    Sort_and_group_tracker *owner;
+    int idx;
+  public:
+    Iterator(Sort_and_group_tracker *owner_arg) : 
+      owner(owner_arg), idx(owner_arg->get_n_actions() - 1)
+    {}
+
+    enum_qep_action get_next(Filesort_tracker **tracker/*,
+                             enum_tmp_table_use *tmp_table_use*/)
+    {
+      /* Walk back through the array... */
+      if (idx < 0)
+        return EXPL_ACTION_EOF;
+      switch (owner->qep_actions[idx])
+      {
+        case EXPL_ACTION_FILESORT:
+          *tracker= owner->qep_actions_data[idx].filesort_tracker;
+          break;
+        case EXPL_ACTION_TEMPTABLE:
+          //*tmp_table_use= tmp_table_kind[tmp_table_idx++];
+          break;
+        default:
+          break;
+      }
+      return owner->qep_actions[idx--];
+    }
+
+    bool is_last_element() { return idx == -1; }
+  };
 };
 

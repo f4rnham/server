@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2014, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2000, 2015, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, 2009 Google Inc.
 Copyright (c) 2009, Percona Inc.
 Copyright (c) 2012, Facebook Inc.
@@ -3000,19 +3000,6 @@ trx_is_strict(
 	trx_t*	trx)	/*!< in: transaction */
 {
 	return(trx && trx->mysql_thd && THDVAR(trx->mysql_thd, strict_mode));
-}
-
-/**********************************************************************//**
-Determines if the current MySQL thread is running in strict mode.
-If thd==NULL, THDVAR returns the global value of innodb-strict-mode.
-@return	TRUE if strict */
-UNIV_INLINE
-ibool
-thd_is_strict(
-/*==========*/
-	THD*	thd)	/*!< in: MySQL thread descriptor */
-{
-	return(THDVAR(thd, strict_mode));
 }
 
 /**************************************************************//**
@@ -10046,9 +10033,6 @@ wsrep_append_key(
 	DBUG_RETURN(0);
 }
 
-extern void compute_md5_hash(char *digest, const char *buf, int len);
-#define MD5_HASH compute_md5_hash
-
 int
 ha_innobase::wsrep_append_keys(
 /*==================*/
@@ -11763,7 +11747,7 @@ ha_innobase::create(
 						      &mtr);
 
 		/* Set up new crypt data */
-		fil_space_set_crypt_data(innobase_table->space, crypt_data);
+		crypt_data = fil_space_set_crypt_data(innobase_table->space, crypt_data);
 
 		/* Compute location to store crypt data */
 		byte* frame = buf_block_get_frame(block);
@@ -19001,6 +18985,14 @@ static MYSQL_SYSVAR_BOOL(disable_background_merge,
   NULL, NULL, FALSE);
 #endif /* UNIV_DEBUG || UNIV_IBUF_DEBUG */
 
+static MYSQL_SYSVAR_ULONG(buf_dump_status_frequency, srv_buf_dump_status_frequency,
+  PLUGIN_VAR_RQCMDARG,
+  "A number between [0, 100] that tells how oftern buffer pool dump status "
+  "in percentages should be printed. E.g. 10 means that buffer pool dump "
+  "status is printed when every 10% of number of buffer pool pages are "
+  "dumped. Default is 0 (only start and end status is printed).",
+  NULL, NULL, 0, 0, 100, 0);
+
 #ifdef WITH_INNODB_DISALLOW_WRITES
 /*******************************************************
  *    innobase_disallow_writes variable definition     *
@@ -19201,7 +19193,7 @@ static MYSQL_SYSVAR_ENUM(encrypt_tables, srv_encrypt_tables,
 			 PLUGIN_VAR_OPCMDARG,
 			 "Enable encryption for tables. "
 			 "Don't forget to enable --innodb-encrypt-log too",
-			 NULL,
+			 innodb_encrypt_tables_validate,
 			 innodb_encrypt_tables_update,
 			 0,
 			 &srv_encrypt_tables_typelib);
@@ -19501,6 +19493,7 @@ static struct st_mysql_sys_var* innobase_system_variables[]= {
   MYSQL_SYSVAR(debug_force_scrubbing),
 #endif
   MYSQL_SYSVAR(instrument_semaphores),
+  MYSQL_SYSVAR(buf_dump_status_frequency),
   NULL
 };
 
@@ -20058,6 +20051,7 @@ innodb_compression_algorithm_validate(
 	}
 
 	compression_algorithm = *reinterpret_cast<ulong*>(save);
+	(void)compression_algorithm;
 
 #ifndef HAVE_LZ4
 	if (compression_algorithm == PAGE_LZ4_ALGORITHM) {

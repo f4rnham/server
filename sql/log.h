@@ -1056,9 +1056,8 @@ uint purge_log_get_error_code(int res);
 
 int vprint_msg_to_log(enum loglevel level, const char *format, va_list args);
 void sql_print_error(const char *format, ...);
-void sql_print_warning(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
-void sql_print_information(const char *format, ...)
-  ATTRIBUTE_FORMAT(printf, 1, 2);
+void sql_print_warning(const char *format, ...);
+void sql_print_information(const char *format, ...);
 typedef void (*sql_print_message_func)(const char *format, ...)
   ATTRIBUTE_FORMAT_FPTR(printf, 1, 2);
 extern sql_print_message_func sql_print_message_handlers[];
@@ -1088,6 +1087,8 @@ void binlog_reset_cache(THD *thd);
 extern MYSQL_PLUGIN_IMPORT MYSQL_BIN_LOG mysql_bin_log;
 extern LOGGER logger;
 
+extern const char *log_bin_index;
+extern const char *log_bin_basename;
 
 /**
   Turns a relative log binary log path into a full path, based on the

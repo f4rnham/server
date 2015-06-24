@@ -341,6 +341,26 @@ fil_space_get_by_id(
 	return(space);
 }
 
+/*******************************************************************//**
+Returns the table space by a given id, NULL if not found. */
+fil_space_t*
+fil_space_found_by_id(
+/*==================*/
+	ulint	id)	/*!< in: space id */
+{
+	fil_space_t* space = NULL;
+	mutex_enter(&fil_system->mutex);
+	space = fil_space_get_by_id(id);
+
+	/* Not found if space is being deleted */
+	if (space && space->stop_new_ops) {
+		space = NULL;
+	}
+
+	mutex_exit(&fil_system->mutex);
+	return space;
+}
+
 /****************************************************************//**
 Get space id from fil node */
 ulint
@@ -1408,21 +1428,26 @@ fil_space_get_space(
 		}
 
 		/* The following code must change when InnoDB supports
-		multiple datafiles per tablespace. */
-		ut_a(1 == UT_LIST_GET_LEN(space->chain));
+		multiple datafiles per tablespace. Note that there is small
+		change that space is found from tablespace list but
+		we have not yet created node for it and as we hold
+		fil_system mutex here fil_node_create can't continue. */
+		ut_a(UT_LIST_GET_LEN(space->chain) == 1 || UT_LIST_GET_LEN(space->chain) == 0);
 
 		node = UT_LIST_GET_FIRST(space->chain);
 
-		/* It must be a single-table tablespace and we have not opened
-		the file yet; the following calls will open it and update the
-		size fields */
+		if (node) {
+			/* It must be a single-table tablespace and we have not opened
+			the file yet; the following calls will open it and update the
+			size fields */
 
-		if (!fil_node_prepare_for_io(node, fil_system, space)) {
-			/* The single-table tablespace can't be opened,
-			because the ibd file is missing. */
-			return(NULL);
+			if (!fil_node_prepare_for_io(node, fil_system, space)) {
+				/* The single-table tablespace can't be opened,
+				because the ibd file is missing. */
+				return(NULL);
+			}
+			fil_node_complete_io(node, fil_system, OS_FILE_READ);
 		}
-		fil_node_complete_io(node, fil_system, OS_FILE_READ);
 	}
 
 	return(space);
@@ -5569,17 +5594,19 @@ fil_space_get_block_size(
 	ulint	len)
 {
 	ulint block_size = 512;
+	ut_ad(!mutex_own(&fil_system->mutex));
+
+	mutex_enter(&fil_system->mutex);
 	fil_space_t* space = fil_space_get_space(space_id);
 
 	if (space) {
-		mutex_enter(&fil_system->mutex);
 		fil_node_t* node = fil_space_get_node(space, space_id, &block_offset, 0, len);
-		mutex_exit(&fil_system->mutex);
 
 		if (node) {
 			block_size = node->file_block_size;
 		}
 	}
+	mutex_exit(&fil_system->mutex);
 
 	return block_size;
 }
@@ -6383,14 +6410,19 @@ fil_iterate(
 		for (ulint i = 0; i < n_pages_read; ++i) {
 
 			if (iter.crypt_data != NULL) {
+				ulint size = iter.page_size;
 				bool decrypted = fil_space_decrypt(
-					iter.crypt_data,
-					readptr + i * iter.page_size,    // src
-					iter.page_size,
-					io_buffer + i * iter.page_size); // dst
+							iter.crypt_data,
+							io_buffer + i * size, //dst
+							iter.page_size,
+							readptr + i * size); // src
+
 				if (decrypted) {
 					/* write back unencrypted page */
 					updated = true;
+				} else {
+					/* TODO: remove unnecessary memcpy's */
+					memcpy(io_buffer + i * size, readptr + i * size, size);
 				}
 			}
 
@@ -6764,6 +6796,7 @@ Get id of first tablespace or ULINT_UNDEFINED if none */
 UNIV_INTERN
 ulint
 fil_get_first_space()
+/*=================*/
 {
 	ulint out_id = ULINT_UNDEFINED;
 	fil_space_t* space;
@@ -6788,10 +6821,83 @@ fil_get_first_space()
 }
 
 /******************************************************************
+Get id of first tablespace that has node or ULINT_UNDEFINED if none */
+UNIV_INTERN
+ulint
+fil_get_first_space_safe()
+/*======================*/
+{
+	ulint out_id = ULINT_UNDEFINED;
+	fil_space_t* space;
+
+	mutex_enter(&fil_system->mutex);
+
+	space = UT_LIST_GET_FIRST(fil_system->space_list);
+	if (space != NULL) {
+		do
+		{
+			if (!space->stop_new_ops && UT_LIST_GET_LEN(space->chain) > 0) {
+				out_id = space->id;
+				break;
+			}
+
+			space = UT_LIST_GET_NEXT(space_list, space);
+		} while (space != NULL);
+	}
+
+	mutex_exit(&fil_system->mutex);
+
+	return out_id;
+}
+
+/******************************************************************
 Get id of next tablespace or ULINT_UNDEFINED if none */
 UNIV_INTERN
 ulint
-fil_get_next_space(ulint id)
+fil_get_next_space(
+/*===============*/
+	ulint	id)	/*!< in: previous space id */
+{
+	bool found;
+	fil_space_t* space;
+	ulint out_id = ULINT_UNDEFINED;
+
+	mutex_enter(&fil_system->mutex);
+
+	space = fil_space_get_by_id(id);
+	if (space == NULL) {
+		/* we didn't find it...search for space with space->id > id */
+		found = false;
+		space = UT_LIST_GET_FIRST(fil_system->space_list);
+	} else {
+		/* we found it, take next available space */
+		found = true;
+	}
+
+	while ((space = UT_LIST_GET_NEXT(space_list, space)) != NULL) {
+
+		if (!found && space->id <= id)
+			continue;
+
+		if (!space->stop_new_ops && UT_LIST_GET_LEN(space->chain) > 0) {
+			/* inc reference to prevent drop */
+			out_id = space->id;
+			break;
+		}
+	}
+
+	mutex_exit(&fil_system->mutex);
+
+	return out_id;
+}
+
+/******************************************************************
+Get id of next tablespace that has node or ULINT_UNDEFINED if none */
+UNIV_INTERN
+ulint
+fil_get_next_space_safe(
+/*====================*/
+	ulint	id)	/*!< in: previous space id */
 {
 	bool found;
 	fil_space_t* space;
@@ -6831,7 +6937,7 @@ Get crypt data for a tablespace */
 UNIV_INTERN
 fil_space_crypt_t*
 fil_space_get_crypt_data(
-/*==================*/
+/*=====================*/
 	ulint id)	/*!< in: space id */
 {
 	fil_space_t*	space;
@@ -6855,7 +6961,7 @@ fil_space_get_crypt_data(
 /******************************************************************
 Get crypt data for a tablespace */
 UNIV_INTERN
-void
+fil_space_crypt_t*
 fil_space_set_crypt_data(
 /*=====================*/
 	ulint id, 	               /*!< in: space id */
@@ -6863,6 +6969,7 @@ fil_space_set_crypt_data(
 {
 	fil_space_t*	space;
 	fil_space_crypt_t* free_crypt_data = NULL;
+	fil_space_crypt_t* ret_crypt_data = NULL;
 
 	ut_ad(fil_system);
 
@@ -6881,9 +6988,11 @@ fil_space_set_crypt_data(
 			mutex_exit(&fil_system->mutex);
 			fil_space_merge_crypt_data(space->crypt_data,
 						   crypt_data);
+			ret_crypt_data = space->crypt_data;
 			free_crypt_data = crypt_data;
 		} else {
 			space->crypt_data = crypt_data;
+			ret_crypt_data = space->crypt_data;
 			mutex_exit(&fil_system->mutex);
 		}
 	} else {
@@ -6899,4 +7008,6 @@ fil_space_set_crypt_data(
 		*/
 		fil_space_destroy_crypt_data(&free_crypt_data);
 	}
+
+	return ret_crypt_data;
 }

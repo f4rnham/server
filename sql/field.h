@@ -1,7 +1,7 @@
 #ifndef FIELD_INCLUDED
 #define FIELD_INCLUDED
 /* Copyright (c) 2000, 2013, Oracle and/or its affiliates.
-   Copyright (c) 2008, 2014, SkySQL Ab.
+   Copyright (c) 2008, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -117,6 +117,20 @@ inline bool is_temporal_type_with_date(enum_field_types type)
   default:
     return false;
   }
+}
+
+
+/**
+  Tests if a field real type can have "DEFAULT CURRENT_TIMESTAMP"
+
+  @param type    Field type, as returned by field->real_type().
+  @retval true   If field real type can have "DEFAULT CURRENT_TIMESTAMP".
+  @retval false  If field real type can not have "DEFAULT CURRENT_TIMESTAMP".
+*/
+inline bool real_type_with_now_as_default(enum_field_types type)
+{
+  return type == MYSQL_TYPE_TIMESTAMP || type == MYSQL_TYPE_TIMESTAMP2 ||
+    type == MYSQL_TYPE_DATETIME || type == MYSQL_TYPE_DATETIME2;
 }
 
 
@@ -713,7 +727,7 @@ public:
     null_bit= p_null_bit;
   }
 
-  inline THD *get_thd() { return table ? table->in_use : current_thd; }
+  inline THD *get_thd() const { return table ? table->in_use : current_thd; }
 
   enum {
     LAST_NULL_BYTE_UNDEF= 0
@@ -883,7 +897,7 @@ public:
                    int cuted_increment) const;
   void set_datetime_warning(Sql_condition::enum_warning_level, uint code, 
                             const ErrConv *str, timestamp_type ts_type,
-                            int cuted_increment);
+                            int cuted_increment) const;
   inline bool check_overflow(int op_result)
   {
     return (op_result == E_DEC_OVERFLOW);
@@ -1667,6 +1681,15 @@ protected:
   int store_TIME_with_warning(MYSQL_TIME *ltime, const ErrConv *str,
                               int was_cut, int have_smth_to_conv);
   virtual void store_TIME(MYSQL_TIME *ltime) = 0;
+  bool validate_for_get_date(bool not_zero_date, const MYSQL_TIME *ltime,
+                             ulonglong fuzzydate) const
+  {
+    if (!not_zero_date)
+      return fuzzydate & TIME_NO_ZERO_DATE;
+    if (!ltime->month || !ltime->day)
+      return fuzzydate & TIME_NO_ZERO_IN_DATE;
+    return false;
+  }
 public:
   Field_temporal_with_date(uchar *ptr_arg, uint32 len_arg,
                            uchar *null_ptr_arg, uchar null_bit_arg,
@@ -2622,6 +2645,14 @@ public:
   int  store(longlong nr, bool unsigned_val);
   int  store_decimal(const my_decimal *);
   uint size_of() const { return sizeof(*this); }
+  /**
+   Key length is provided only to support hash joins. (compared byte for byte)
+   Ex: SELECT .. FROM t1,t2 WHERE t1.field_geom1=t2.field_geom2.
+
+   The comparison is not very relevant, as identical geometry might be
+   represented differently, but we need to support it either way.
+  */
+  uint32 key_length() const { return packlength; }
 
   /**
     Non-nullable GEOMETRY types cannot have defaults,

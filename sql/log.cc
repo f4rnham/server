@@ -1,5 +1,5 @@
 /* Copyright (c) 2000, 2013, Oracle and/or its affiliates.
-   Copyright (c) 2009, 2014, SkySQL Ab.
+   Copyright (c) 2009, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -66,6 +66,9 @@
 
 handlerton *binlog_hton;
 LOGGER logger;
+
+const char *log_bin_index= 0;
+const char *log_bin_basename= 0;
 
 MYSQL_BIN_LOG mysql_bin_log(&sync_binlog_period);
 
@@ -2526,6 +2529,8 @@ bool MYSQL_LOG::open(
   char buff[FN_REFLEN];
   MY_STAT f_stat;
   File file= -1;
+  my_off_t seek_offset;
+  bool is_fifo = false;
   int open_flags= O_CREAT | O_BINARY;
   DBUG_ENTER("MYSQL_LOG::open");
   DBUG_PRINT("enter", ("log_type: %d", (int) log_type_arg));
@@ -2542,14 +2547,16 @@ bool MYSQL_LOG::open(
                                  log_type_arg, io_cache_type_arg))
     goto err;
 
-  /* File is regular writable file */
-  if (my_stat(log_file_name, &f_stat, MYF(0)) && !MY_S_ISREG(f_stat.st_mode))
-    goto err;
+  is_fifo = my_stat(log_file_name, &f_stat, MYF(0)) &&
+            MY_S_ISFIFO(f_stat.st_mode);
 
   if (io_cache_type == SEQ_READ_APPEND)
     open_flags |= O_RDWR | O_APPEND;
   else
     open_flags |= O_WRONLY | (log_type == LOG_BIN ? 0 : O_APPEND);
+
+  if (is_fifo)
+    open_flags |= O_NONBLOCK;
 
   db[0]= 0;
 
@@ -2558,11 +2565,16 @@ bool MYSQL_LOG::open(
   m_log_file_key= log_file_key;
 #endif
 
-  if ((file= mysql_file_open(log_file_key,
-                             log_file_name, open_flags,
-                             MYF(MY_WME | ME_WAITTANG))) < 0 ||
-      init_io_cache(&log_file, file, IO_SIZE, io_cache_type,
-                    mysql_file_tell(file, MYF(MY_WME)), 0,
+  if ((file= mysql_file_open(log_file_key, log_file_name, open_flags,
+                             MYF(MY_WME | ME_WAITTANG))) < 0)
+    goto err;
+
+  if (is_fifo)
+    seek_offset= 0;
+  else if ((seek_offset= mysql_file_tell(file, MYF(MY_WME))))
+    goto err;
+
+  if (init_io_cache(&log_file, file, IO_SIZE, io_cache_type, seek_offset, 0,
                     MYF(MY_WME | MY_NABP |
                         ((log_type == LOG_BIN) ? MY_WAIT_IF_FULL : 0))))
     goto err;
@@ -2651,17 +2663,17 @@ void MYSQL_LOG::close(uint exiting)
   {
     end_io_cache(&log_file);
 
-    if (mysql_file_sync(log_file.file, MYF(MY_WME)) && ! write_error)
+    if (log_type == LOG_BIN && mysql_file_sync(log_file.file, MYF(MY_WME)) && ! write_error)
     {
       write_error= 1;
-      sql_print_error(ER(ER_ERROR_ON_WRITE), name, errno);
+      sql_print_error(ER_THD_OR_DEFAULT(current_thd, ER_ERROR_ON_WRITE), name, errno);
     }
 
     if (!(exiting & LOG_CLOSE_DELAYED_CLOSE) &&
         mysql_file_close(log_file.file, MYF(MY_WME)) && ! write_error)
     {
       write_error= 1;
-      sql_print_error(ER(ER_ERROR_ON_WRITE), name, errno);
+      sql_print_error(ER_THD_OR_DEFAULT(current_thd, ER_ERROR_ON_WRITE), name, errno);
     }
   }
 
@@ -6694,7 +6706,6 @@ int MYSQL_BIN_LOG::write_cache(THD *thd, IO_CACHE *cache)
         return ER_ERROR_ON_WRITE;
     status_var_add(thd->status_var.binlog_bytes_written, length);
 
-    cache->read_pos=cache->read_end;		// Mark buffer used up
   } while ((length= my_b_fill(cache)));
 
   DBUG_ASSERT(carry == 0);
@@ -6787,6 +6798,10 @@ bool MYSQL_BIN_LOG::write_incident(THD *thd)
 
     if (check_purge)
       checkpoint_and_purge(prev_binlog_id);
+  }
+  else
+  {
+    mysql_mutex_unlock(&LOCK_log);
   }
 
   DBUG_RETURN(error);
@@ -8269,13 +8284,14 @@ static void print_buffer_to_file(enum loglevel level, const char *buffer,
   localtime_r(&skr, &tm_tmp);
   start=&tm_tmp;
 
-  fprintf(stderr, "%02d%02d%02d %2d:%02d:%02d [%s] %.*s%.*s\n",
-          start->tm_year % 100,
+  fprintf(stderr, "%d-%02d-%02d %2d:%02d:%02d %lu [%s] %.*s%.*s\n",
+          start->tm_year + 1900,
           start->tm_mon+1,
           start->tm_mday,
           start->tm_hour,
           start->tm_min,
           start->tm_sec,
+          (unsigned long) pthread_self(),
           (level == ERROR_LEVEL ? "ERROR" : level == WARNING_LEVEL ?
            "Warning" : "Note"),
           tag_length, tag,

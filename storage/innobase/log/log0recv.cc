@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2014, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1997, 2015, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 Copyright (c) 2013, SkySQL Ab. All Rights Reserved.
 
@@ -805,7 +805,10 @@ recv_find_max_checkpoint(
 				buf + LOG_CHECKPOINT_OFFSET_HIGH32)) << 32;
 			checkpoint_no = mach_read_from_8(
 				buf + LOG_CHECKPOINT_NO);
-			log_crypt_read_checkpoint_buf(buf);
+
+			if (!log_crypt_read_checkpoint_buf(buf)) {
+				return DB_ERROR;
+			}
 
 #ifdef UNIV_DEBUG
 			if (log_debug_writes) {
@@ -1880,7 +1883,7 @@ loop:
 		goto loop;
 	}
 
-	ut_ad(!allow_ibuf == mutex_own(&log_sys->mutex));
+	ut_ad((!allow_ibuf) == mutex_own(&log_sys->mutex));
 
 	if (!allow_ibuf) {
 		recv_no_ibuf_operations = TRUE;
