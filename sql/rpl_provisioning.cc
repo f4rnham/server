@@ -10,12 +10,12 @@
 
 provisioning_send_info::provisioning_send_info(THD *thd_arg)
   : thd(thd_arg)
-  , phase(PROV_PHASE_INIT)
+  , connection(new Ed_connection(thd))
   , row_batch_end(NULL)
+  , phase(PROV_PHASE_INIT)
   , error(0)
   , error_text(NULL)
 {
-  connection= new Ed_connection(thd);
 }
 
 provisioning_send_info::~provisioning_send_info()
@@ -27,7 +27,7 @@ provisioning_send_info::~provisioning_send_info()
 
   List_iterator_fast<char> it(tables);
   void* name;
-  while (name= it.next_fast())
+  while ((name= it.next_fast()) != NULL)
     // Names (char*) were allocated by strdup
     free(name);
 
@@ -355,7 +355,7 @@ int8 provisioning_send_info::send_table_data()
       size_t len= pack_row(table, &table->s->all_set, buff2, table->record[0]);
       DBUG_ASSERT(len < 4 * 512);
 
-      if (error= evt.add_row_data(buff2, len))
+      if ((error= evt.add_row_data(buff2, len)) != 0)
       {
         error_text= "Failed to add row data to event";
         return 1;

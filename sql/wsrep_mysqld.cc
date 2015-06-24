@@ -546,8 +546,6 @@ static void wsrep_synced_cb(void* app_ctx)
     if ((rcode = start_slave_threads(1 /* need mutex */,
                             0 /* no wait for start*/,
                             active_mi,
-                            master_info_file,
-                            relay_log_info_file,
                             SLAVE_SQL)))
     {
       WSREP_WARN("Failed to create slave threads: %d", rcode);
