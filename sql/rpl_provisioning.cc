@@ -66,7 +66,7 @@ bool provisioning_send_info::prepare_row_buffer(TABLE *table,
     row_buffer= realloc(row_buffer, row_buffer_size);
   }
 
-  return row_buffer ? true : false;
+  return row_buffer ? false : true;
 }
 
 bool provisioning_send_info::build_database_list()
@@ -97,15 +97,25 @@ bool provisioning_send_info::build_database_list()
 
     Ed_column const *column= row->get_column(0);
 
-    // Skip test run, mysql, information_schema and performance_schema
-    // databases
-    if (!strcmp(column->str, "mtr") ||
-        !strcmp(column->str, INFORMATION_SCHEMA_NAME.str) ||
+    // This variable is here only because we can not use continue for outer
+    // loop in DBUG_EXECUTE_IF
+    bool skip= false;
+
+    // Skip mysql, information_schema and performance_schema databases
+    if (!strcmp(column->str, INFORMATION_SCHEMA_NAME.str) ||
         !strcmp(column->str, PERFORMANCE_SCHEMA_DB_NAME.str) ||
         !strcmp(column->str, MYSQL_SCHEMA_NAME.str))
     {
-      continue;
+      skip= true;
     }
+
+    // Skip test run database only if we are running test - there is small
+    // chance, that regular user database is called 'mtr'
+    DBUG_EXECUTE_IF("provisioning_test_running", 
+                    if (!strcmp(column->str, "mtr")) skip= true;);
+
+    if (skip)
+      continue;
 
     sql_print_information("Discovered database %s", column->str);
     databases.push_back(thd->make_lex_string(column->str, column->length));

@@ -5,6 +5,8 @@
 --source include/have_binlog_format_mixed_or_row.inc
 --source include/master-slave.inc
 
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+
 --connection slave
 --source include/stop_slave.inc
 RESET SLAVE;
@@ -74,6 +76,8 @@ DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP TABLE test.big_table;
 DROP DATABASE test2;
+
+SET GLOBAL debug_dbug="";
 
 --source include/rpl_end.inc
 

@@ -1,5 +1,6 @@
 include/master-slave.inc
 [connection master]
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
 include/stop_slave.inc
 RESET SLAVE;
 DROP DATABASE test;
@@ -197,5 +198,6 @@ DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP TABLE test.big_table;
 DROP DATABASE test2;
+SET GLOBAL debug_dbug="";
 include/rpl_end.inc
 DROP PROCEDURE test.fill_big_table;
