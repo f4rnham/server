@@ -2,17 +2,7 @@
 # Tested functionality of LOAD DATA FROM MASTER - transfer of table and
 # database structures + table rows
 
---source include/have_binlog_format_mixed_or_row.inc
---source include/master-slave.inc
-
-SET GLOBAL debug_dbug="+d,provisioning_test_running";
-
---connection slave
---source include/stop_slave.inc
-RESET SLAVE;
-
-# Drop pre-created database 'test' it will be provisioned from master
-DROP DATABASE test;
+--source include/rpl_provisioning_init.inc
 
 # Create databases and tables on master + fill them with data
 --connection master
@@ -51,8 +41,8 @@ INSERT INTO test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 --connection slave
 LOAD DATA FROM MASTER;
 
-# Give master some time to send all data to slave - needs to be done better
-sleep 1;
+# Replication is completed after sql thread was shut down
+--source include/wait_for_slave_sql_to_stop.inc
 
 # Check if database and table structures were transferred
 SHOW CREATE DATABASE test;
@@ -76,9 +66,16 @@ DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP TABLE test.big_table;
 DROP DATABASE test2;
-
 SET GLOBAL debug_dbug="";
 
+--connection slave
+DROP TABLE test.test_1;
+DROP TABLE test.test_2;
+DROP TABLE test.big_table;
+DROP DATABASE test2;
+SET GLOBAL debug_dbug="";
+
+--let $rpl_only_running_threads= 1
 --source include/rpl_end.inc
 
 DROP PROCEDURE test.fill_big_table;

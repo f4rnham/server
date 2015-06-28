@@ -1,7 +1,6 @@
-include/master-slave.inc
-[connection master]
+include/rpl_provisioning_init.inc
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
-include/stop_slave.inc
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
 RESET SLAVE;
 DROP DATABASE test;
 RESET MASTER;
@@ -27,6 +26,7 @@ CREATE TABLE test2_2 (a int, b int, PRIMARY KEY (a));
 INSERT INTO test2_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 LOAD DATA FROM MASTER;
+include/wait_for_slave_sql_to_stop.inc
 SHOW CREATE DATABASE test;
 Database	Create Database
 test	CREATE DATABASE `test` /*!40100 DEFAULT CHARACTER SET latin1 */
@@ -194,6 +194,11 @@ a
 98
 99
 100
+DROP TABLE test.test_1;
+DROP TABLE test.test_2;
+DROP TABLE test.big_table;
+DROP DATABASE test2;
+SET GLOBAL debug_dbug="";
 DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP TABLE test.big_table;

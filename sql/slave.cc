@@ -3591,6 +3591,9 @@ static int exec_relay_log_event(THD* thd, Relay_log_info* rli,
           rli->slave_skip_counter= 1;
       }
     }
+    // Provisioning only event, terminate thread
+    else if (typ == PROVISIONING_DONE_EVENT)
+      rli->abort_slave= true;
 
     serial_rgi->future_event_relay_log_pos= rli->future_event_relay_log_pos;
     serial_rgi->event_relay_log_name= rli->event_relay_log_name;
@@ -5786,6 +5789,12 @@ static int queue_event(Master_info* mi,const char* buf, ulong event_len)
   }
   break;
 
+  case PROVISIONING_DONE_EVENT:
+    mi->abort_slave= true;
+    /*
+      Fall through to default case ... and through debug code, nothing wrong
+      should happen
+    */
 #ifndef DBUG_OFF
   case XID_EVENT:
     DBUG_EXECUTE_IF("slave_discard_xid_for_gtid_0_x_1000",

@@ -200,7 +200,7 @@ void event_to_packet(Log_event &evt, String &packet)
   close_cached_file(&buffer);
 }
 
-int8 provisioning_send_info::send_event(Log_event &evt)
+bool provisioning_send_info::send_event(Log_event &evt)
 {
   String packet;
   event_to_packet(evt, packet);
@@ -486,6 +486,12 @@ int8 provisioning_send_info::send_table_data()
   return result;
 }
 
+bool provisioning_send_info::send_done_event()
+{
+  Provisioning_done_log_event evt;
+  return send_event(evt);
+}
+
 /**
   Sends a provisioning data to slave if there are some available.
 
@@ -512,7 +518,10 @@ int8 provisioning_send_info::send_provisioning_data()
     {
       // No more data to send
       if (databases.is_empty())
+      {
+        send_done_event();
         return 0;
+      }
 
       if (send_create_database() || build_table_list())
         return 1;

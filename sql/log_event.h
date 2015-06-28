@@ -265,6 +265,7 @@ struct sql_ex_info
 #define BINLOG_CHECKPOINT_HEADER_LEN 4
 #define GTID_HEADER_LEN       19
 #define GTID_LIST_HEADER_LEN   4
+#define PROVISIONING_DONE_HEADER_LEN 0
 
 /* 
   Max number of possible extra bytes in a replication event compared to a
@@ -728,6 +729,11 @@ enum Log_event_type
     each replication domain.
   */
   GTID_LIST_EVENT= 163,
+  /*
+    Provisioning done event. Sent after last batch of provisioning data.
+    Only purpose of this event is to terminate IO and SQL slave threads.
+  */
+  PROVISIONING_DONE_EVENT= 164,
 
   /* Add new MariaDB events here - right above this comment!  */
 
@@ -2964,6 +2970,33 @@ private:
       return Log_event::EVENT_SKIP_NOT;
   }
 #endif
+};
+
+/**
+  @class Provisioning_done_log_event
+
+  @section Provisioning_done_log_event_binary_format Binary Format
+
+  The Post-Header and Body for this event type are empty; it only has
+  the Common-Header.
+*/
+class Provisioning_done_log_event: public Log_event
+{
+public:
+#ifdef MYSQL_SERVER
+  Provisioning_done_log_event() :Log_event()
+  {}
+#else
+  void print(FILE *file, PRINT_EVENT_INFO *print_event_info);
+#endif
+
+  Provisioning_done_log_event(char const *buf,
+                      Format_description_log_event const *description_event):
+    Log_event(buf, description_event)
+  {}
+  ~Provisioning_done_log_event() {}
+  Log_event_type get_type_code() { return PROVISIONING_DONE_EVENT; }
+  bool is_valid() const { return true; }
 };
 
 /**

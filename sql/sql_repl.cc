@@ -2551,16 +2551,16 @@ static my_off_t get_binlog_end_pos(binlog_send_info *info,
         int8 res;
         if ((res= info->provisioning_info->send_provisioning_data()) >= 0)
         {
-          // FIXME - Farnham
-          // Master has currently no way to tell slave, that
-          // replication / provisioning has ended and if we will stop
-          // he will try to reconnect over and over again.
-          // For now we will only switch from provisioning to regular
-          // replication by clearing provisioning flag
+          // No error can be set if call succeeded
+          DBUG_ASSERT(res == 1 ||
+                      (!info->provisioning_info->error &&
+                      !info->provisioning_info->error_text));
+
+          // No more data, stop provisioning
           if (res == 0)
           {
-            //info->should_stop= true;
-            info->flags&= ~BINLOG_DUMP_PROVISIONING_MODE;
+            info->should_stop= true;
+            return 0;
           }
           else if (res == 1)
           {
@@ -2579,10 +2579,6 @@ static my_off_t get_binlog_end_pos(binlog_send_info *info,
                                   "none");
             return 1;
           }
-
-          // No error can be set if call succeeded
-          DBUG_ASSERT(!info->provisioning_info->error &&
-                      !info->provisioning_info->error_text);
         }
 
         // Recheck if binlog end position moved while we were sending

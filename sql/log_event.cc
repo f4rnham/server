@@ -806,6 +806,7 @@ const char* Log_event::get_type_str(Log_event_type type)
   case BINLOG_CHECKPOINT_EVENT: return "Binlog_checkpoint";
   case GTID_EVENT: return "Gtid";
   case GTID_LIST_EVENT: return "Gtid_list";
+  case PROVISIONING_DONE_EVENT: return "Provisioning_done";
   default: return "Unknown";				/* impossible */
   }
 }
@@ -1703,6 +1704,9 @@ Log_event* Log_event::read_log_event(const char* buf, uint event_len,
       break;
     case ANNOTATE_ROWS_EVENT:
       ev = new Annotate_rows_log_event(buf, event_len, description_event);
+      break;
+    case PROVISIONING_DONE_EVENT:
+      ev = new Provisioning_done_log_event(buf, description_event);
       break;
     default:
       DBUG_PRINT("error",("Unknown event code: %d",
@@ -4864,6 +4868,7 @@ Format_description_log_event(uint8 binlog_ver, const char* server_ver)
         BINLOG_CHECKPOINT_HEADER_LEN;
       post_header_len[GTID_EVENT-1]= GTID_HEADER_LEN;
       post_header_len[GTID_LIST_EVENT-1]= GTID_LIST_HEADER_LEN;
+      post_header_len[PROVISIONING_DONE_EVENT-1]= PROVISIONING_DONE_HEADER_LEN;
 
       // Sanity-check that all post header lengths are initialized.
       int i;
@@ -8155,6 +8160,30 @@ int Stop_log_event::do_update_pos(rpl_group_info *rgi)
 }
 
 #endif /* !MYSQL_CLIENT */
+
+
+/**************************************************************************
+	Provisioning_done_log_event methods
+**************************************************************************/
+
+/*
+  Provisioning_done_log_event::print()
+*/
+
+#ifdef MYSQL_CLIENT
+void Provisioning_done_log_event::print(FILE* file,
+                                        PRINT_EVENT_INFO* print_event_info)
+{
+  Write_on_release_cache cache(&print_event_info->head_cache, file,
+                               Write_on_release_cache::FLUSH_F);
+
+  if (print_event_info->short_form)
+    return;
+
+  print_header(&cache, print_event_info, FALSE);
+  my_b_write_string(&cache, "\tProvisioning done\n");
+}
+#endif /* MYSQL_CLIENT */
 #endif /* HAVE_REPLICATION */
 
 

@@ -124,7 +124,7 @@ public:
   int8 send_provisioning_data();
 
 private:
-  int8 send_event(Log_event& evt);
+  bool send_event(Log_event& evt);
 
   // Initialization functions
   bool build_database_list();
@@ -134,6 +134,7 @@ private:
   bool send_create_table();
 
   int8 send_table_data();
+  bool send_done_event();
 
   bool prepare_row_buffer(TABLE *table, uchar const *data);
 };
