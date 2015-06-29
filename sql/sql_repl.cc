@@ -2564,19 +2564,7 @@ static my_off_t get_binlog_end_pos(binlog_send_info *info,
           }
           else if (res == 1)
           {
-            // FIXME - Farnham
-            // Propagate error from provisioning to lower level
-            
-            // When error occurred, at least one better description of error
-            // must be available
-            DBUG_ASSERT(info->provisioning_info->error ||
-                        info->provisioning_info->error_text);
-
-            sql_print_information("Replication error %u - %s",
-                                  info->provisioning_info->error,
-                                  info->provisioning_info->error_text ?
-                                  info->provisioning_info->error_text :
-                                  "none");
+            info->error= ER_PROVISIONING_FAILED;
             return 1;
           }
         }
@@ -2933,7 +2921,6 @@ err:
   mysql_mutex_unlock(&LOCK_thread_count);
   thd->variables.max_allowed_packet= old_max_allowed_packet;
   delete info->fdev;
-  delete info->provisioning_info;
 
   if (info->error == ER_MASTER_FATAL_ERROR_READING_BINLOG && binlog_open)
   {
@@ -2995,8 +2982,16 @@ err:
                 "mysql", rpl_gtid_slave_state_table_name.str);
     info->error= ER_MASTER_FATAL_ERROR_READING_BINLOG;
   }
+  else if (info->error == ER_PROVISIONING_FAILED)
+  {
+    DBUG_ASSERT(info->provisioning_info);
+    info->provisioning_info->format_error_message(info->error_text,
+                                                  sizeof(info->error_text));
+  }
   else if (info->error != 0 && info->errmsg != NULL)
     strcpy(info->error_text, info->errmsg);
+
+  delete info->provisioning_info;
 
   if (info->error == 0)
   {

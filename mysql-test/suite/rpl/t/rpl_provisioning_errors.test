@@ -1,0 +1,38 @@
+# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
+# Tested functionality of LOAD DATA FROM MASTER - error detection
+
+--source include/rpl_provisioning_init.inc
+
+# Create table without primary key on master
+--connection master
+RESET MASTER;
+
+USE test;
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (1), (2), (3), (4), (5);
+
+# Start provisioning
+--connection slave
+call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1977 and message: 'Table does not contain primary key' while processing `test`.`t1`, Internal MariaDB error code: 1977");
+
+LOAD DATA FROM MASTER;
+
+--let $show_slave_io_error= 1
+--let $slave_io_errno= 1977
+--source include/wait_for_slave_io_error.inc
+STOP SLAVE;
+RESET SLAVE;
+
+# Provisioning is completed after sql thread was shut down
+#--source include/wait_for_slave_sql_to_stop.inc
+# Cleanup
+--connection master
+DROP TABLE test.t1;
+SET GLOBAL debug_dbug="";
+
+--connection slave
+DROP TABLE test.t1;
+SET GLOBAL debug_dbug="";
+
+--let $rpl_only_running_threads= 1
+--source include/rpl_end.inc

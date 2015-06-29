@@ -63,16 +63,24 @@ bool provisioning_send_info::prepare_row_buffer(TABLE *table,
   {
     // Allocate a bit more than we need
     row_buffer_size= size_t(req_size * 1.1f);
-    row_buffer= realloc(row_buffer, row_buffer_size);
+
+    if ((row_buffer= realloc(row_buffer, row_buffer_size)) == NULL)
+    {
+      error_text= "Out of memory";
+      return true;
+    }
   }
 
-  return row_buffer ? false : true;
+  return false;
 }
 
 bool provisioning_send_info::build_database_list()
 {
   if (connection->execute_direct({ C_STRING_WITH_LEN("SHOW DATABASES") }))
+  {
+    error_text= "Failed to query existing databases";
     return true;
+  }
 
   Ed_result_set *result= connection->use_result_set();
 
@@ -81,6 +89,7 @@ bool provisioning_send_info::build_database_list()
   if (!result || result->get_field_count() != 1 ||
       connection->has_next_result())
   {
+    error_text= "Failed to read list of existing databases";
     return true;
   }
 
@@ -111,7 +120,7 @@ bool provisioning_send_info::build_database_list()
 
     // Skip test run database only if we are running test - there is small
     // chance, that regular user database is called 'mtr'
-    DBUG_EXECUTE_IF("provisioning_test_running", 
+    DBUG_EXECUTE_IF("provisioning_test_running",
                     if (!strcmp(column->str, "mtr")) skip= true;);
 
     if (skip)
@@ -144,7 +153,10 @@ bool provisioning_send_info::build_table_list()
   dynstr_append(&query, database->str);
 
   if (connection->execute_direct({ query.str, query.length }))
+  {
+    error_text= "Failed to query tables from database";
     return true;
+  }
 
   Ed_result_set *result= connection->use_result_set();
 
@@ -153,6 +165,7 @@ bool provisioning_send_info::build_table_list()
   if (!result || result->get_field_count() != 1 ||
       connection->has_next_result())
   {
+    error_text= "Failed to read list of tables";
     return true;
   }
 
@@ -177,20 +190,44 @@ bool provisioning_send_info::build_table_list()
   return false;
 }
 
-// Helper for conversion of Log_event into data which can be sent
-// to slave with terrible implementation
-void event_to_packet(Log_event &evt, String &packet)
+/**
+  Helper for conversion of Log_event into data which can be sent to slave
+
+  @return false - ok
+          true  - error
+
+  FIXME - Farnham
+  Can be done better, at least open file only once and reset it
+ */
+
+bool provisioning_send_info::event_to_packet(Log_event &evt, String &packet)
 {
   IO_CACHE buffer;
-  DBUG_ASSERT(!open_cached_file(&buffer, mysql_tmpdir,
-                                TEMP_PREFIX, READ_RECORD_BUFFER, MYF(MY_WME)));
+  if (open_cached_file(&buffer, mysql_tmpdir,
+                       TEMP_PREFIX, READ_RECORD_BUFFER, MYF(MY_WME)))
+  {
+    error_text= "Failed to prepare cache";
+    return true;
+  }
 
-  DBUG_ASSERT(!evt.write(&buffer));
+  if (evt.write(&buffer))
+  {
+    error_text= "Failed to write event";
+    return true;
+  }
 
-  reinit_io_cache(&buffer, READ_CACHE, 0, false, false);
+  if (reinit_io_cache(&buffer, READ_CACHE, 0, false, false))
+  {
+    error_text= "Failed to switch cache mode";
+    return true;
+  }
 
   packet.set("\0", 1, &my_charset_bin);
-  DBUG_ASSERT(!packet.append(&buffer, buffer.write_pos - buffer.buffer));
+  if (packet.append(&buffer, buffer.write_pos - buffer.buffer))
+  {
+    error_text= "Failed to write data to packet";
+    return true;
+  }
 
   // Set current server as source of event, when slave registers on master,
   // it overwrites thd->variables.server_id with its own server id - and it is
@@ -198,14 +235,26 @@ void event_to_packet(Log_event &evt, String &packet)
   packet[SERVER_ID_OFFSET + 1]= global_system_variables.server_id;
 
   close_cached_file(&buffer);
+  return false;
 }
+
+// FIXME - Farnham
+// Documentation
 
 bool provisioning_send_info::send_event(Log_event &evt)
 {
   String packet;
-  event_to_packet(evt, packet);
 
-  return my_net_write(&thd->net, (uchar*)packet.ptr(), packet.length());
+  if (event_to_packet(evt, packet))
+    return true;
+
+  if (my_net_write(&thd->net, (uchar*)packet.ptr(), packet.length()))
+  {
+    error_text= "Failed to send event to slave";
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -229,7 +278,10 @@ bool provisioning_send_info::send_create_database()
   dynstr_append(&query, database->str);
 
   if (connection->execute_direct({ query.str, query.length }))
+  {
+    error_text= "Failed to retrieve database structure";
     return true;
+  }
 
   Ed_result_set *result= connection->use_result_set();
 
@@ -238,10 +290,11 @@ bool provisioning_send_info::send_create_database()
   if (!result || result->size() != 1 || result->get_field_count() != 2 ||
       connection->has_next_result())
   {
+    error_text= "Failed to read database structure";
     return true;
   }
 
-  
+
   List<Ed_row>& rows= *result;
   // First column is name of database, second is create query
   Ed_column const *column= rows.head()->get_column(1);
@@ -257,10 +310,7 @@ bool provisioning_send_info::send_create_database()
                       true,  // suppress_use
                       0);    // error
 
-  send_event(evt);
-  net_flush(&thd->net);
-
-  return false;
+  return send_event(evt);
 }
 
 /**
@@ -287,7 +337,10 @@ bool provisioning_send_info::send_create_table()
   dynstr_append(&query, table);
 
   if (connection->execute_direct({ query.str, query.length }))
+  {
+    error_text= "Failed to retrieve table structure";
     return true;
+  }
 
   Ed_result_set *result= connection->use_result_set();
 
@@ -296,6 +349,7 @@ bool provisioning_send_info::send_create_table()
   if (!result || result->size() != 1 || result->get_field_count() != 2 ||
       connection->has_next_result())
   {
+    error_text= "Failed to read table structure";
     return true;
   }
 
@@ -320,12 +374,12 @@ bool provisioning_send_info::send_create_table()
                       false, // suppress_use
                       0);    // error
 
-  send_event(evt);
+  bool res= false;
+  if (send_event(evt))
+    res= true;
 
   thd->reset_db(old_db, old_db_length);
-  net_flush(&thd->net);
-
-  return false;
+  return res;
 }
 
 /**
@@ -354,8 +408,13 @@ int8 provisioning_send_info::send_table_data()
   // Check for permissions
 
   if (open_and_lock_tables(thd, &table_list, FALSE, 0))
-    return 0;
+  {
+    error_text= "Failed to open table";
+    return 1;
+  }
 
+  // Default result, error
+  int8 result= 1;
   TABLE *table= table_list.table;
   handler *hdl= table->file;
   DBUG_ASSERT(hdl);
@@ -365,37 +424,36 @@ int8 provisioning_send_info::send_table_data()
   if ((error= hdl->prepare_range_scan(row_batch_end, NULL)) != 0)
   {
     error_text= "Range scan preparation failed";
-    return 1;
+    goto err_close_tables;
   }
 
-  // FIXME - Farnham
-  // Check for index existence
-  if ((error= hdl->ha_index_init(0, true)) != 0)
+  if (table->s->primary_key == MAX_KEY)
+  {
+    error_text= "Table does not contain primary key";
+    goto err_close_tables;
+  }
+
+  if ((error= hdl->ha_index_init(table->s->primary_key, true)) != 0)
   {
     error_text= "Index initialization failed";
-    return 1;
+    goto err_close_tables;
   }
 
   if ((error= hdl->read_range_first(row_batch_end, NULL, false, true)) == 0)
   {
     uint32 packed_rows= 0;
 
-    Table_map_log_event map_evt= Table_map_log_event(thd, table,
-                                                     table->s->table_map_id,
-                                                     false);
+    Table_map_log_event map_evt(thd, table, table->s->table_map_id, false);
 
-    Write_rows_log_event evt= Write_rows_log_event(thd, table,
-                                                   table->s->table_map_id,
-                                                   &table->s->all_set, false);
+    Write_rows_log_event evt(thd, table, table->s->table_map_id,
+                             &table->s->all_set, false);
+
     evt.set_flags(Rows_log_event::STMT_END_F);
 
     do
     {
       if (prepare_row_buffer(table, table->record[0]))
-      {
-        error_text= "Out of memory";
-        return 1;
-      }
+        goto err_index_end;
 
       size_t len= pack_row(table, &table->s->all_set, (uchar*)row_buffer,
                            table->record[0]);
@@ -403,7 +461,7 @@ int8 provisioning_send_info::send_table_data()
       if ((error= evt.add_row_data((uchar*)row_buffer, len)) != 0)
       {
         error_text= "Failed to add row data to event";
-        return 1;
+        goto err_index_end;
       }
 
       ++packed_rows;
@@ -412,14 +470,12 @@ int8 provisioning_send_info::send_table_data()
            (error= hdl->read_range_next()) == 0);
 
     if (error && error != HA_ERR_END_OF_FILE)
-    {
-      return 1;
-    }
+      goto err_index_end;
 
     if (packed_rows > 0)
     {
-      send_event(map_evt);
-      send_event(evt);
+      if (send_event(map_evt) || send_event(evt))
+        goto err_index_end;
     }
 
     // Read one more row and store its key for next call
@@ -441,9 +497,6 @@ int8 provisioning_send_info::send_table_data()
     }
   }
 
-  // Ok, more data - default result
-  int8 result= -1;
-
   // EOF error means, that we processed all rows in table, shift to next
   // table and ignore it
   if (error == HA_ERR_END_OF_FILE)
@@ -462,18 +515,22 @@ int8 provisioning_send_info::send_table_data()
     // Ok, no more data
     result= 0;
   }
-  // Real error occurred
+  // Real error occurred, result= 1 is default value, no need to set it here
   else if (error)
-  {
     error_text= "Error occurred while sending row data";
-    return 1;
-  }
+  // More data
+  else
+    result= -1;
+
+err_index_end:
 
   if ((error= hdl->ha_index_end()) != 0)
   {
     error_text= "ha_index_end() call failed";
-    return 1;
+    result= 1;
   }
+
+err_close_tables:
 
   close_thread_tables(thd);
 
@@ -518,10 +575,7 @@ int8 provisioning_send_info::send_provisioning_data()
     {
       // No more data to send
       if (databases.is_empty())
-      {
-        send_done_event();
-        return 0;
-      }
+        return send_done_event() ? 1 : 0;
 
       if (send_create_database() || build_table_list())
         return 1;
@@ -585,4 +639,42 @@ int8 provisioning_send_info::send_provisioning_data()
   // There may be more tables or databases waiting, run this function at least
   // one more time
   return -1;
+}
+
+/**
+  Creates string describing last provisioning error
+
+  @param[out] buffer   Destination buffer for formatted error message
+  @param buffer_size   Length of destination buffer
+ */
+
+void provisioning_send_info::format_error_message(char buffer[],
+                                                size_t buffer_size)
+{
+  // At least one better description of error must be available
+  DBUG_ASSERT(error || error_text);
+
+  if (error && error_text)
+  {
+    my_snprintf(buffer, buffer_size,
+                "'%s', underlying error code %d while processing "
+                "`%s`.`%s`", error_text, error,
+                databases.is_empty() ? "<none>" : databases.head()->str,
+                tables.is_empty() ? "<none>" : tables.head());
+  }
+  else if (error)
+  {
+    my_snprintf(buffer, buffer_size,
+                "underlying error code %d while "
+                "processing `%s`.`%s`", error,
+                databases.is_empty() ? "<none>" : databases.head()->str,
+                tables.is_empty() ? "<none>" : tables.head());
+  }
+  else // if (error_text)
+  {
+    my_snprintf(buffer, buffer_size,
+                "'%s' while processing `%s`.`%s`", error_text,
+                databases.is_empty() ? "<none>" : databases.head()->str,
+                tables.is_empty() ? "<none>" : tables.head());
+  }
 }

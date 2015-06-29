@@ -37,11 +37,11 @@ CREATE TABLE test2_2 (a int, b int, PRIMARY KEY (a));
 INSERT INTO test2_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 
-# Start our pseudo replication - slave will start recieving data from master
+# Start provisioning
 --connection slave
 LOAD DATA FROM MASTER;
 
-# Replication is completed after sql thread was shut down
+# Provisioning is completed after sql thread was shut down
 --source include/wait_for_slave_sql_to_stop.inc
 
 # Check if database and table structures were transferred

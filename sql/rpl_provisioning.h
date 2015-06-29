@@ -104,7 +104,7 @@ public:
     provisioning code
 
     If <code>send_table_data()</code> returns 1 (error) either
-    <code>error</code> or <code>error_text</code> contains better more 
+    <code>error</code> or <code>error_text</code> contains better more
     information
   */
   int error;
@@ -123,8 +123,11 @@ public:
 
   int8 send_provisioning_data();
 
+  void format_error_message(char buffer[], size_t buffer_size);
+
 private:
   bool send_event(Log_event& evt);
+  bool event_to_packet(Log_event &evt, String &packet);
 
   // Initialization functions
   bool build_database_list();

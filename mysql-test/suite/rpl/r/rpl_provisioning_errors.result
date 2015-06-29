@@ -1,0 +1,20 @@
+include/rpl_provisioning_init.inc
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+RESET SLAVE;
+DROP DATABASE test;
+RESET MASTER;
+USE test;
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (1), (2), (3), (4), (5);
+call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1977 and message: 'Table does not contain primary key' while processing `test`.`t1`, Internal MariaDB error code: 1977");
+LOAD DATA FROM MASTER;
+include/wait_for_slave_io_error.inc [errno=1977]
+Last_IO_Error = 'Provisioning failed with error code 1977 and message: 'Table does not contain primary key' while processing `test`.`t1`'
+STOP SLAVE;
+RESET SLAVE;
+DROP TABLE test.t1;
+SET GLOBAL debug_dbug="";
+DROP TABLE test.t1;
+SET GLOBAL debug_dbug="";
+include/rpl_end.inc
