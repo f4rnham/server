@@ -3,18 +3,36 @@
 
 --source include/rpl_provisioning_init.inc
 
-# Create table without primary key on master
+#
+# Attempt to start provisioning while not in GTID mode
+#
+--connection slave
+CHANGE MASTER TO MASTER_USE_GTID = no;
+--error 1978
+LOAD DATA FROM MASTER;
+
+# Cleanup after test case
+CHANGE MASTER TO MASTER_USE_GTID = slave_pos;
+
+#
+# Attempt to start provisioning while SQL thread is running
+#
+START SLAVE SQL_THREAD;
+--error 1198
+LOAD DATA FROM MASTER;
+
+# Cleanup after test case
+STOP SLAVE SQL_THREAD;
+
+#
+# Attempt to provision table without primary key
+#
 --connection master
-RESET MASTER;
+CREATE TABLE test.t1 (a int);
+INSERT INTO test.t1 VALUES (1), (2), (3), (4), (5);
 
-USE test;
-CREATE TABLE t1 (a int);
-INSERT INTO t1 VALUES (1), (2), (3), (4), (5);
-
-# Start provisioning
 --connection slave
 call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1977 and message: 'Table does not contain primary key' while processing `test`.`t1`, Internal MariaDB error code: 1977");
-
 LOAD DATA FROM MASTER;
 
 --let $show_slave_io_error= 1
@@ -23,15 +41,23 @@ LOAD DATA FROM MASTER;
 STOP SLAVE;
 RESET SLAVE;
 
-# Provisioning is completed after sql thread was shut down
-#--source include/wait_for_slave_sql_to_stop.inc
-# Cleanup
+# Cleanup after test case
 --connection master
 DROP TABLE test.t1;
+--connection slave
+DROP TABLE test.t1;
+
+#
+# Another test case
+#
+
+# ...
+
+# Final cleanup
+--connection master
 SET GLOBAL debug_dbug="";
 
 --connection slave
-DROP TABLE test.t1;
 SET GLOBAL debug_dbug="";
 
 --let $rpl_only_running_threads= 1

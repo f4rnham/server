@@ -3299,10 +3299,16 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
   // Get a mask of _stopped_ threads
   init_thread_mask(&thread_mask, mi, 1 /* inverse */);
 
-  // If IO thread is already running, fail with error,
-  // it needs to connect to master with provisioning configuration
-  if ((thread_mask & SLAVE_IO) == 0)
-    ; // FIXME - Farnham
+  // Both IO and SQL threads needs to be turned off
+  // IO to connect to master with provisioning flag on
+  // SQL to remove relay log files
+  if (thread_mask != (SLAVE_IO | SLAVE_SQL))
+  {
+    unlock_slave_threads(mi);
+    my_error(ER_SLAVE_MUST_STOP, MYF(0), (int)mi->connection_name.length,
+             mi->connection_name.str);
+    DBUG_RETURN(1);
+  }
 
   if (init_master_info(mi, master_info_file_tmp, relay_log_info_file_tmp, 0,
       thread_mask))

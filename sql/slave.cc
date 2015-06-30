@@ -944,8 +944,7 @@ int start_slave_threads(bool need_slave_mutex, bool wait_for_start,
     }
     else
     {
-      mi->gtid_current_pos.reset();
-      // FIXME - Farnham reset more things and also not only in memory
+      mi->clear_in_memory_info(false);
     }
 
     mi->events_queued_since_last_gtid= 0;

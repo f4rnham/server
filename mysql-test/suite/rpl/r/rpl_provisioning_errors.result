@@ -3,10 +3,16 @@ SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 RESET SLAVE;
 DROP DATABASE test;
-RESET MASTER;
-USE test;
-CREATE TABLE t1 (a int);
-INSERT INTO t1 VALUES (1), (2), (3), (4), (5);
+CHANGE MASTER TO MASTER_USE_GTID = no;
+LOAD DATA FROM MASTER;
+ERROR HY000: This operation cannot be performed as server is not configured to use GTID; run CHANGE MASTER TO MASTER_USE_GTID = {current_pos|slave_pos} first
+CHANGE MASTER TO MASTER_USE_GTID = slave_pos;
+START SLAVE SQL_THREAD;
+LOAD DATA FROM MASTER;
+ERROR HY000: This operation cannot be performed as you have a running slave ''; run STOP SLAVE '' first
+STOP SLAVE SQL_THREAD;
+CREATE TABLE test.t1 (a int);
+INSERT INTO test.t1 VALUES (1), (2), (3), (4), (5);
 call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1977 and message: 'Table does not contain primary key' while processing `test`.`t1`, Internal MariaDB error code: 1977");
 LOAD DATA FROM MASTER;
 include/wait_for_slave_io_error.inc [errno=1977]
@@ -14,7 +20,7 @@ Last_IO_Error = 'Provisioning failed with error code 1977 and message: 'Table do
 STOP SLAVE;
 RESET SLAVE;
 DROP TABLE test.t1;
-SET GLOBAL debug_dbug="";
 DROP TABLE test.t1;
+SET GLOBAL debug_dbug="";
 SET GLOBAL debug_dbug="";
 include/rpl_end.inc

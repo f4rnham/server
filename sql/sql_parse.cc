@@ -3609,16 +3609,16 @@ end_with_restore_list:
 
     if (!mi)
     {
-      mysql_mutex_unlock(&LOCK_active_mi);
       // Error already printed
+      mysql_mutex_unlock(&LOCK_active_mi);
       break;
     }
 
     if (mi->using_gtid == Master_info::USE_GTID_NO)
     {
-      //mysql_mutex_unlock(&LOCK_active_mi);
-      // FIXME - Farnham Print error
-      //break;
+      my_error(ER_PROVISIONING_NOT_GTID, MYF(0));
+      mysql_mutex_unlock(&LOCK_active_mi);
+      break;
     }
 
     if (!start_provisioning(thd, mi, 1 /* net report*/))

@@ -7129,3 +7129,5 @@ ER_CANNOT_CONVERT_CHARACTER
         eng "Cannot convert '%s' character 0x%-.64s to '%s'"
 ER_PROVISIONING_FAILED
         eng "Provisioning failed with error code %d and message: %s"
+ER_PROVISIONING_NOT_GTID
+        eng "This operation cannot be performed as server is not configured to use GTID; run CHANGE MASTER TO MASTER_USE_GTID = {current_pos|slave_pos} first"
