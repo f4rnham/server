@@ -7,12 +7,12 @@
 # Attempt to start provisioning while not in GTID mode
 #
 --connection slave
-CHANGE MASTER TO MASTER_USE_GTID = no;
+CHANGE MASTER TO MASTER_USE_GTID= no;
 --error 1978
 LOAD DATA FROM MASTER;
 
 # Cleanup after test case
-CHANGE MASTER TO MASTER_USE_GTID = slave_pos;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 
 #
 # Attempt to start provisioning while SQL thread is running
@@ -40,12 +40,32 @@ LOAD DATA FROM MASTER;
 --source include/wait_for_slave_io_error.inc
 STOP SLAVE;
 RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 
 # Cleanup after test case
 --connection master
 DROP TABLE test.t1;
 --connection slave
 DROP TABLE test.t1;
+
+#
+# Disconnect during provisioning
+#
+--connection slave
+SET GLOBAL debug_dbug="+d,FORCE_SLAVE_TO_RECONNECT_DUMP";
+call mtr.add_suppression("Slave I/O: Slave disconnected during provisioning, drop already provisioned databases from slave and try again, Internal MariaDB error code: 1979");
+LOAD DATA FROM MASTER;
+
+--let $show_slave_io_error= 1
+--let $slave_io_errno= 1979
+--source include/wait_for_slave_io_error.inc
+STOP SLAVE;
+RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+
+# Cleanup after test case
+--connection slave
+SET GLOBAL debug_dbug="-d,FORCE_SLAVE_TO_RECONNECT_DUMP";
 
 #
 # Another test case

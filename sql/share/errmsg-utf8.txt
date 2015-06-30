@@ -7131,3 +7131,5 @@ ER_PROVISIONING_FAILED
         eng "Provisioning failed with error code %d and message: %s"
 ER_PROVISIONING_NOT_GTID
         eng "This operation cannot be performed as server is not configured to use GTID; run CHANGE MASTER TO MASTER_USE_GTID = {current_pos|slave_pos} first"
+ER_PROVISIONING_DISCONNECTED
+        eng "Slave disconnected during provisioning, drop already provisioned databases from slave and try again"

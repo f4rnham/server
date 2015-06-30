@@ -3745,6 +3745,15 @@ static int try_to_reconnect(THD *thd, MYSQL *mysql, Master_info *mi,
   thd->clear_active_vio();
 #endif
   end_server(mysql);
+
+  // Provisioning does not support reconnection of slave yet
+  if (mi->provisioning_mode)
+  {
+    mi->report(ERROR_LEVEL, ER_PROVISIONING_DISCONNECTED, NULL,
+               ER(ER_PROVISIONING_DISCONNECTED));
+    return 1;
+  }
+
   if ((*retry_count)++)
   {
     if (*retry_count > master_retry_count)
@@ -3868,9 +3877,7 @@ pthread_handler_t handle_slave_io(void *arg)
   my_pthread_setspecific_ptr(RPL_MASTER_INFO, mi);
 
   /* Load the set of seen GTIDs, if we did not already. */
-  // FIXME - Farnham reset gtid state instead of loading it if we are running
-  // in provisioning mode
-  if (rpl_load_gtid_slave_state(thd))
+  if (!mi->provisioning_mode && rpl_load_gtid_slave_state(thd))
   {
     mi->report(ERROR_LEVEL, thd->get_stmt_da()->sql_errno(), NULL,
                 "Unable to load replication GTID slave state from mysql.%s: %s",
@@ -3946,7 +3953,8 @@ connected:
     mi->gtid_event_seen= false;
   }
 
-  // FIXME - Farnham version number + report message
+  // FIXME - Farnham
+  // Version number + report message
   if (mi->provisioning_mode && mysql_get_server_version(mysql) < 0)
   {
     sql_print_error("Master does not support provisioning");

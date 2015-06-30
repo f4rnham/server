@@ -3317,6 +3317,7 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
   }
   else
   {
+    DBUG_ASSERT(!mi->slave_running && !mi->rli.slave_running);
     mi->provisioning_mode= true;
 
     slave_errno = start_slave_threads(0 /*no mutex */,

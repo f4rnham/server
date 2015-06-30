@@ -42,6 +42,7 @@ SET GLOBAL debug_dbug="+d,provisioning_test_running";
 --connection slave
 --source include/stop_slave.inc
 RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 
 --let $include_filename= rpl_provisioning_init.inc
