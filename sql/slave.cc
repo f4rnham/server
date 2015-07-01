@@ -4056,6 +4056,11 @@ requesting master dump") ||
           goto err;
         goto connected;
       });
+
+    DBUG_EXECUTE_IF("provisioning_test_running",
+                    /*os_event_set(mi->dump_requested_semaphore);*/
+                    mi->dump_requested_semaphore= 1;);
+
     const char *event_buf;
 
     DBUG_ASSERT(mi->last_error().number == 0);

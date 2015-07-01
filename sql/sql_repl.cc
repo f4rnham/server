@@ -3320,9 +3320,17 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
     DBUG_ASSERT(!mi->slave_running && !mi->rli.slave_running);
     mi->provisioning_mode= true;
 
+    DBUG_EXECUTE_IF("provisioning_test_running",
+                    /*os_event_create();*/
+                    mi->dump_requested_semaphore= 0;);
+
     slave_errno = start_slave_threads(0 /*no mutex */,
                                       1 /* wait for start */,
                                       mi, thread_mask);
+
+    DBUG_EXECUTE_IF("provisioning_test_running",
+                    /*os_event_wait(mi->dump_requested_semaphore);*/
+                    while (!mi->dump_requested_semaphore) ;);
   }
 
 err:
