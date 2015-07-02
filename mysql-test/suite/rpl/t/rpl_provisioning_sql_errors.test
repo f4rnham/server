@@ -1,0 +1,41 @@
+# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
+# Tested functionality of LOAD DATA FROM MASTER - updating or data when they are not
+# sent to slave yet
+
+--source include/rpl_provisioning_init.inc
+
+# Create databases and tables on master + fill them with data
+--connection master
+RESET MASTER;
+
+CREATE TABLE test.t1 (a int, b int, PRIMARY KEY (a));
+INSERT INTO test.t1 VALUES (1, 1);
+
+# Start provisioning without sending any data - not even database / table structures
+SET GLOBAL debug_dbug="+d,provisioning_wait";
+--connection slave
+LOAD DATA FROM MASTER;
+
+# Now update data in table on master
+--connection master
+UPDATE test.t1 SET b = 2 WHERE a = 1;
+INSERT INTO test.t1 VALUES (2, 2);
+SET GLOBAL debug_dbug="-d,provisioning_wait";
+
+# Provisioning is completed after sql thread was shut down
+--connection slave
+--source include/wait_for_slave_sql_to_stop.inc
+
+SELECT * FROM test.t1;
+
+# Cleanup
+--connection master
+DROP TABLE test.t1;
+SET GLOBAL debug_dbug="";
+
+--connection slave
+DROP TABLE test.t1;
+SET GLOBAL debug_dbug="";
+
+--let $rpl_only_running_threads= 1
+--source include/rpl_end.inc

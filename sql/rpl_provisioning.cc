@@ -561,6 +561,8 @@ bool provisioning_send_info::send_done_event()
 
 int8 provisioning_send_info::send_provisioning_data()
 {
+  DBUG_EXECUTE_IF("provisioning_wait", return -1;);
+
   switch (phase)
   {
     case PROV_PHASE_INIT:
