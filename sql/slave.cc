@@ -4130,6 +4130,18 @@ Stopping slave I/O thread due to out-of-memory error from master");
           mi->report(ERROR_LEVEL, ER_PROVISIONING_FAILED, NULL,
                      ER(ER_PROVISIONING_FAILED),
                      mysql_error_number, mysql_error(mysql));
+
+          // Terminate SQL thread immediately, fatal error occurred
+          // FIXME - Farnham
+          // Relay log can now contain row data, if user starts provisioning
+          // again, they are removed, but they can still cause problems in
+          // other cases
+          // Also, abort_slave can be set too late and signal sent too early
+          // to prevent infinite wait in SQL thread - in short, this does not
+          // work always
+          mi->rli.abort_slave= true;
+          mi->rli.relay_log.signal_update();
+
           goto err;
         }
         if (try_to_reconnect(thd, mysql, mi, &retry_count, suppress_warnings,
