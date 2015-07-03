@@ -1,0 +1,56 @@
+include/rpl_provisioning_init.inc
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+DROP DATABASE test;
+RESET MASTER;
+CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_` (`_@_*_$_'_ _\t_\x_"_``_` int, PRIMARY KEY (`_@_*_$_'_ _\t_\x_"_``_`));
+INSERT INTO test.`_@_*_$_'_ _\t_\x_"_``_` VALUES (1), (2), (3), (4), (5);
+CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
+CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`SELECT` (`WHERE` int, PRIMARY KEY (`WHERE`));
+INSERT INTO `_@_*_$_'_ _\t_\x_"_``_`.`SELECT` VALUES (1), (2), (3), (4), (5);
+CREATE DATABASE `SELECT`;
+LOAD DATA FROM MASTER;
+include/wait_for_slave_sql_to_stop.inc
+SHOW CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
+Table	Create Table
+_@_*_$_'_ _\t_\x_"_`_	CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_` (
+  `_@_*_$_'_ _\t_\x_"_``_` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`_@_*_$_'_ _\t_\x_"_``_`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
+Database	Create Database
+_@_*_$_'_ _\t_\x_"_`_	CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_` /*!40100 DEFAULT CHARACTER SET latin1 */
+SHOW CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`SELECT`;
+Table	Create Table
+SELECT	CREATE TABLE `select` (
+  `WHERE` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`WHERE`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE DATABASE `SELECT`;
+Database	Create Database
+SELECT	CREATE DATABASE `select` /*!40100 DEFAULT CHARACTER SET latin1 */
+SELECT * FROM test.`_@_*_$_'_ _\t_\x_"_``_`;
+_@_*_$_'_ _\t_\x_"_`_
+1
+2
+3
+4
+5
+SELECT * FROM `_@_*_$_'_ _\t_\x_"_``_`.`SELECT`;
+WHERE
+1
+2
+3
+4
+5
+DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
+DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
+DROP DATABASE `SELECT`;
+SET GLOBAL debug_dbug="";
+DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
+DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
+DROP DATABASE `SELECT`;
+SET GLOBAL debug_dbug="";
+include/rpl_end.inc

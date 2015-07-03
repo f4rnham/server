@@ -8,6 +8,28 @@
 #include "sql_base.h"
 #include "key.h"
 
+/*
+  Quotes a string using backticks
+
+  @param[in] name   String to quote
+  @param[out] buff  Destination buffer
+*/
+void quote_name(char const *name, char *buff)
+{
+  char *to= buff;
+  char qtype= '`';
+
+  *to++= qtype;
+  while (*name)
+  {
+    if (*name == qtype)
+      *to++= qtype;
+    *to++= *name++;
+  }
+  to[0]= qtype;
+  to[1]= 0;
+}
+
 provisioning_send_info::provisioning_send_info(THD *thd_arg)
   : thd(thd_arg)
   , connection(new Ed_connection(thd))
@@ -126,7 +148,7 @@ bool provisioning_send_info::build_database_list()
     if (skip)
       continue;
 
-    sql_print_information("Discovered database %s", column->str);
+    sql_print_information("Discovered database `%s`", column->str);
     databases.push_back(thd->make_lex_string(column->str, column->length));
   }
 
@@ -148,9 +170,12 @@ bool provisioning_send_info::build_table_list()
 
   DYNAMIC_STRING query;
   LEX_STRING const *database= databases.head();
+  char name_buff[NAME_LEN * 2 + 3];
 
   init_dynamic_string(&query, "SHOW TABLES FROM ", 0, 0);
-  dynstr_append(&query, database->str);
+
+  quote_name(database->str, name_buff);
+  dynstr_append(&query, name_buff);
 
   if (connection->execute_direct({ query.str, query.length }))
   {
@@ -182,7 +207,7 @@ bool provisioning_send_info::build_table_list()
 
     Ed_column const *column= row->get_column(0);
 
-    sql_print_information("Discovered table %s.%s", database->str,
+    sql_print_information("Discovered table `%s`.`%s`", database->str,
                           column->str);
     tables.push_back(strdup(column->str));
   }
@@ -271,11 +296,12 @@ bool provisioning_send_info::send_create_database()
 
   DYNAMIC_STRING query;
   LEX_STRING const *database= databases.head();
+  char name_buff[NAME_LEN * 2 + 3];
 
-  // FIXME - Farnham
-  // Quoting / escaping
   init_dynamic_string(&query, "SHOW CREATE DATABASE ", 0, 0);
-  dynstr_append(&query, database->str);
+
+  quote_name(database->str, name_buff);
+  dynstr_append(&query, name_buff);
 
   if (connection->execute_direct({ query.str, query.length }))
   {
@@ -299,7 +325,7 @@ bool provisioning_send_info::send_create_database()
   // First column is name of database, second is create query
   Ed_column const *column= rows.head()->get_column(1);
 
-  sql_print_information("Got create database query for %s\n%s",
+  sql_print_information("Got create database query for `%s`\n%s",
                         database->str, column->str);
 
   // FIXME - Farnham
@@ -328,13 +354,17 @@ bool provisioning_send_info::send_create_table()
   DYNAMIC_STRING query;
   LEX_STRING const *database= databases.head();
   char const *table= tables.head();
+  char name_buff[NAME_LEN * 2 + 3];
 
-  // FIXME - Farnham
-  // Quoting / escaping
   init_dynamic_string(&query, "SHOW CREATE TABLE ", 0, 0);
-  dynstr_append(&query, database->str);
+
+  quote_name(database->str, name_buff);
+  dynstr_append(&query, name_buff);
+
   dynstr_append(&query, ".");
-  dynstr_append(&query, table);
+
+  quote_name(table, name_buff);
+  dynstr_append(&query, name_buff);
 
   if (connection->execute_direct({ query.str, query.length }))
   {
@@ -357,7 +387,7 @@ bool provisioning_send_info::send_create_table()
   // First column is name of table, second is create query
   Ed_column const *column= rows.head()->get_column(1);
 
-  sql_print_information("Got create table query for %s.%s\n%s",
+  sql_print_information("Got create table query for `%s`.`%s`\n%s",
                         database->str, table, column->str);
 
 
@@ -396,7 +426,7 @@ int8 provisioning_send_info::send_table_data()
   // Ensure that tables were prepared
   DBUG_ASSERT(!tables.is_empty());
 
-  sql_print_information("send_table_data() - %s.%s", databases.head()->str,
+  sql_print_information("send_table_data() - `%s`.`%s`", databases.head()->str,
                         tables.head());
 
   TABLE_LIST table_list;
