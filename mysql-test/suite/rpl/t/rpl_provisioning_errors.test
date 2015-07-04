@@ -38,7 +38,6 @@ LOAD DATA FROM MASTER;
 --let $show_slave_io_error= 1
 --let $slave_io_errno= 1977
 --source include/wait_for_slave_io_error.inc
-STOP SLAVE;
 RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 
@@ -46,7 +45,7 @@ CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 --connection master
 DROP TABLE test.t1;
 --connection slave
-DROP TABLE test.t1;
+DROP DATABASE IF EXISTS test;
 
 #
 # Disconnect during provisioning
@@ -79,6 +78,7 @@ SET GLOBAL debug_dbug="";
 
 --connection slave
 SET GLOBAL debug_dbug="";
+CREATE DATABASE test;
 
 --let $rpl_only_running_threads= 1
 --source include/rpl_end.inc

@@ -18,11 +18,10 @@ call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1977 an
 LOAD DATA FROM MASTER;
 include/wait_for_slave_io_error.inc [errno=1977]
 Last_IO_Error = 'Provisioning failed with error code 1977 and message: 'Table does not contain primary key' while processing `test`.`t1`'
-STOP SLAVE;
 RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP TABLE test.t1;
-DROP TABLE test.t1;
+DROP DATABASE IF EXISTS test;
 SET GLOBAL debug_dbug="+d,FORCE_SLAVE_TO_RECONNECT_DUMP";
 call mtr.add_suppression("Slave I/O: Slave disconnected during provisioning, drop already provisioned databases from slave and try again, Internal MariaDB error code: 1979");
 LOAD DATA FROM MASTER;
@@ -34,4 +33,5 @@ CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 SET GLOBAL debug_dbug="-d,FORCE_SLAVE_TO_RECONNECT_DUMP";
 SET GLOBAL debug_dbug="";
 SET GLOBAL debug_dbug="";
+CREATE DATABASE test;
 include/rpl_end.inc

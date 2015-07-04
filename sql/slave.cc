@@ -4056,9 +4056,21 @@ connected:
 requesting master dump") ||
           try_to_reconnect(thd, mysql, mi, &retry_count, suppress_warnings,
                            reconnect_messages[SLAVE_RECON_ACT_DUMP]))
+      {
+        DBUG_EXECUTE_IF("provisioning_test_running",
+                        /*os_event_set(mi->dump_requested_semaphore);*/
+                        mi->dump_requested_semaphore= 1;);
+
         goto err;
+      }
+
       goto connected;
     }
+
+    DBUG_EXECUTE_IF("provisioning_test_running",
+                    /*os_event_set(mi->dump_requested_semaphore);*/
+                    mi->dump_requested_semaphore= 1;);
+
     DBUG_EXECUTE_IF("FORCE_SLAVE_TO_RECONNECT_DUMP", 
       if (!retry_count_dump)
       {
@@ -4069,10 +4081,6 @@ requesting master dump") ||
           goto err;
         goto connected;
       });
-
-    DBUG_EXECUTE_IF("provisioning_test_running",
-                    /*os_event_set(mi->dump_requested_semaphore);*/
-                    mi->dump_requested_semaphore= 1;);
 
     const char *event_buf;
 
