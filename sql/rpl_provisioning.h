@@ -33,7 +33,9 @@ enum provisioning_phase
                            // ticks for large tables - state is stored in
                            // <code>row_batch_end</code>
 
-  PROV_PHASE_TRIGGERS,     // NYI
+  PROV_PHASE_TRIGGERS,     // Trigger creation
+                           // Executed for each table
+                           // Processed during one tick
 
   PROV_PHASE_EVENTS,       // NYI
 
@@ -133,11 +135,23 @@ private:
   bool build_database_list();
   bool build_table_list();
 
+  // Retrieving of meta-data
   bool send_create_database();
   bool send_create_table();
+  bool send_table_triggers();
 
   int8 send_table_data();
+
   bool send_done_event();
 
+  // Utility
   bool prepare_row_buffer(TABLE *table, uchar const *data);
+  bool open_table(TABLE_LIST *table_list, LEX_STRING const *database,
+                  char const *table);
+  void close_tables();
+  bool send_query_log_event(LEX_STRING const *query, bool suppress_use= true,
+                            LEX_STRING const *database= NULL);
+
+  bool allocate_key_range(TABLE *table);
+  void free_key_range();
 };

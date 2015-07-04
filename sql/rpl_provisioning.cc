@@ -1,6 +1,7 @@
 // FIXME - Farnham
 // Header
 // Memory allocations - usage of my_* functions
+// Character sets, collations
 
 #include "rpl_provisioning.h"
 #include "log_event.h"
@@ -57,10 +58,7 @@ provisioning_send_info::~provisioning_send_info()
 
   // If error occurred, this may not be freed
   if (row_batch_end)
-  {
-    delete[] row_batch_end->key;
-    delete row_batch_end;
-  }
+    free_key_range();
 
   free(row_buffer);
 }
@@ -95,6 +93,145 @@ bool provisioning_send_info::prepare_row_buffer(TABLE *table,
 
   return false;
 }
+
+/**
+  Opens one table and does all necessary checks
+
+  @param [out] table_list List which will contain opened table if function 
+                          succeeds
+  @param [in]  database   Name of database containing table to be opened
+  @param [in]  table      Name of table to be opened
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::open_table(TABLE_LIST* table_list,
+                                        LEX_STRING const* database,
+                                        char const *table)
+{
+  table_list->init_one_table(database->str, database->length,
+                             table, strlen(table),
+                             NULL, TL_READ);
+
+  // FIXME - Farnham
+  // Check for permissions
+
+  if (open_and_lock_tables(thd, table_list, FALSE, 0))
+  {
+    error_text= "Failed to open table";
+    return true;
+  }
+
+  return false;
+}
+
+/**
+  Closes all tables opened by provisioning and releases locks
+ */
+
+void provisioning_send_info::close_tables()
+{
+  close_thread_tables(thd);
+
+  // FIXME - Farnham
+  // Where were these locks acquired? Can we release them here?
+  // If they are not released, cleanup drop table statement from test
+  // causes deadlock during meta data locking
+  thd->mdl_context.release_transactional_locks();
+}
+
+/**
+  Create query log event from provided query and send it to slave
+
+  @param query        Query
+  @param suppress_use Suppress 'USE' statement, if false, function temporarily
+                      switches thread database
+  @param database     Database in which query has to be executed, not null
+                      only if suppress_use == false
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::send_query_log_event(LEX_STRING const *query,
+                                                  bool suppress_use,
+                                                  LEX_STRING const *database)
+{
+  char *old_db;
+  size_t old_db_length;
+
+  if (!suppress_use)
+  {
+    // Set database, Query_log_event uses it for generation of use statement
+    old_db= thd->db;
+    old_db_length= thd->db_length;
+    thd->reset_db(database->str, database->length);
+  }
+
+  // FIXME - Farnham
+  // Double check exact meaning of all constructor parameters
+  Query_log_event evt(thd, query->str, query->length,
+                      false,        // using_trans
+                      true,         // direct
+                      suppress_use, // suppress_use
+                      0);           // error
+
+  bool res= false;
+  if (send_event(evt))
+    res= true;
+
+  if (!suppress_use)
+    thd->reset_db(old_db, old_db_length);
+
+  return res;
+}
+
+/**
+  Function responsible for allocation of <code>row_batch_end</code>
+
+  @param table Table for which is key range allocated
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::allocate_key_range(TABLE *table)
+{
+  // Prevent allocation without free
+  DBUG_ASSERT(row_batch_end == NULL);
+
+  row_batch_end= new key_range();
+  if (!row_batch_end)
+    return true;
+
+  row_batch_end->length= table->key_info->key_length;
+  row_batch_end->keypart_map= HA_WHOLE_KEY;
+  row_batch_end->flag= HA_READ_KEY_OR_NEXT;
+  row_batch_end->key= new uchar[row_batch_end->length];
+
+  return row_batch_end->key ? false : true;
+}
+
+/**
+  Function responsible for freeing of memory allocated by
+  <code>provisioning_send_info::allocate_key_range</code>
+ */
+
+void provisioning_send_info::free_key_range()
+{
+  delete[] row_batch_end->key;
+  delete row_batch_end;
+  row_batch_end= NULL;
+}
+
+/**
+  Builds list of databases and stores it in <code>databases</code> list
+  Run only once per provisioning
+
+  @return false - ok
+          true  - error
+ */
 
 bool provisioning_send_info::build_database_list()
 {
@@ -158,6 +295,9 @@ bool provisioning_send_info::build_database_list()
 /**
   Builds list of tables for currently provisioned database - first in
   <code>databases</code> list
+
+  @return false - ok
+          true  - error
  */
 
 bool provisioning_send_info::build_table_list()
@@ -166,7 +306,7 @@ bool provisioning_send_info::build_table_list()
   // processed (removed from list)
   DBUG_ASSERT(tables.is_empty());
   // There is at least one database left for provisioning
-  DBUG_ASSERT(databases.elements > 0);
+  DBUG_ASSERT(!databases.is_empty());
 
   DYNAMIC_STRING query;
   LEX_STRING const *database= databases.head();
@@ -328,20 +468,15 @@ bool provisioning_send_info::send_create_database()
   sql_print_information("Got create database query for `%s`\n%s",
                         database->str, column->str);
 
-  // FIXME - Farnham
-  // Double check exact meaning of all constructor parameters
-  Query_log_event evt(thd, column->str, column->length,
-                      false, // using_trans
-                      true,  // direct
-                      true,  // suppress_use
-                      0);    // error
-
-  return send_event(evt);
+  return send_query_log_event(column);
 }
 
 /**
   Creates and sends 'CREATE TABLE' <code>Query_log_event</code> for
   first table in <code>tables</code> list
+
+  FIXME - Farnham
+  View handling
 
   @return false - ok
           true  - error
@@ -391,25 +526,7 @@ bool provisioning_send_info::send_create_table()
                         database->str, table, column->str);
 
 
-  // Set database, Query_log_event uses it for generation of use statement
-  char *old_db= thd->db;
-  size_t old_db_length= thd->db_length;
-  thd->reset_db(database->str, database->length);
-
-  // FIXME - Farnham
-  // Double check exact meaning of all constructor parameters
-  Query_log_event evt(thd, column->str, column->length,
-                      false, // using_trans
-                      true,  // direct
-                      false, // suppress_use
-                      0);    // error
-
-  bool res= false;
-  if (send_event(evt))
-    res= true;
-
-  thd->reset_db(old_db, old_db_length);
-  return res;
+  return send_query_log_event(column, false, database);
 }
 
 /**
@@ -430,21 +547,9 @@ int8 provisioning_send_info::send_table_data()
                         tables.head());
 
   TABLE_LIST table_list;
-  table_list.init_one_table(databases.head()->str, databases.head()->length,
-                            tables.head(), strlen(tables.head()),
-                            NULL, TL_READ);
-
-  // FIXME - Farnham
-  // Check for permissions
-
-  if (open_and_lock_tables(thd, &table_list, FALSE, 0))
-  {
-    error_text= "Failed to open table";
+  if (open_table(&table_list, databases.head(), tables.head()))
     return 1;
-  }
 
-  // Default result, error
-  int8 result= 1;
   TABLE *table= table_list.table;
   handler *hdl= table->file;
   DBUG_ASSERT(hdl);
@@ -454,20 +559,26 @@ int8 provisioning_send_info::send_table_data()
   if ((error= hdl->prepare_range_scan(row_batch_end, NULL)) != 0)
   {
     error_text= "Range scan preparation failed";
-    goto err_close_tables;
+    close_tables();
+    return 1;
   }
 
   if (table->s->primary_key == MAX_KEY)
   {
     error_text= "Table does not contain primary key";
-    goto err_close_tables;
+    close_tables();
+    return 1;
   }
 
   if ((error= hdl->ha_index_init(table->s->primary_key, true)) != 0)
   {
     error_text= "Index initialization failed";
-    goto err_close_tables;
+    close_tables();
+    return 1;
   }
+
+  // Default result, error
+  int8 result= 1;
 
   if ((error= hdl->read_range_first(row_batch_end, NULL, false, true)) == 0)
   {
@@ -483,7 +594,7 @@ int8 provisioning_send_info::send_table_data()
     do
     {
       if (prepare_row_buffer(table, table->record[0]))
-        goto err_index_end;
+        goto error;
 
       size_t len= pack_row(table, &table->s->all_set, (uchar*)row_buffer,
                            table->record[0]);
@@ -491,7 +602,7 @@ int8 provisioning_send_info::send_table_data()
       if ((error= evt.add_row_data((uchar*)row_buffer, len)) != 0)
       {
         error_text= "Failed to add row data to event";
-        goto err_index_end;
+        goto error;
       }
 
       ++packed_rows;
@@ -500,12 +611,12 @@ int8 provisioning_send_info::send_table_data()
            (error= hdl->read_range_next()) == 0);
 
     if (error && error != HA_ERR_END_OF_FILE)
-      goto err_index_end;
+      goto error;
 
     if (packed_rows > 0)
     {
       if (send_event(map_evt) || send_event(evt))
-        goto err_index_end;
+        goto error;
     }
 
     // Read one more row and store its key for next call
@@ -513,13 +624,10 @@ int8 provisioning_send_info::send_table_data()
     if (error != HA_ERR_END_OF_FILE && (error= hdl->read_range_next()) == 0)
     {
       // First time saving key for this table, allocate structure for it
-      if (!row_batch_end)
+      if (!row_batch_end && allocate_key_range(table))
       {
-        row_batch_end= new key_range();
-        row_batch_end->length= table->key_info->key_length;
-        row_batch_end->keypart_map= HA_WHOLE_KEY;
-        row_batch_end->flag= HA_READ_KEY_OR_NEXT;
-        row_batch_end->key= new uchar[row_batch_end->length];
+        error_text= "Out of memory";
+        goto error;
       }
 
       key_copy(const_cast<uchar*>(row_batch_end->key), table->record[0],
@@ -532,15 +640,10 @@ int8 provisioning_send_info::send_table_data()
   if (error == HA_ERR_END_OF_FILE)
   {
     error= 0;
-    free(tables.pop());
 
     // Free key data for current table
     if (row_batch_end)
-    {
-      delete[] row_batch_end->key;
-      delete row_batch_end;
-      row_batch_end= NULL;
-    }
+      free_key_range();
 
     // Ok, no more data
     result= 0;
@@ -552,7 +655,7 @@ int8 provisioning_send_info::send_table_data()
   else
     result= -1;
 
-err_index_end:
+error:
 
   if ((error= hdl->ha_index_end()) != 0)
   {
@@ -560,16 +663,67 @@ err_index_end:
     result= 1;
   }
 
-err_close_tables:
+  close_tables();
+  return result;
+}
 
-  close_thread_tables(thd);
+/**
+  Creates and sends 'CREATE TRIGGER' <code>Query_log_event</code> for
+  first table in <code>databases</code> list
 
-  // FIXME - Farnham
-  // Where were these locks acquired? Can we release them here?
-  // If they are not released, cleanup drop table statement from test
-  // causes deadlock during meta data locking
-  thd->mdl_context.release_transactional_locks();
+  @return false - ok
+          true  - error
+ */
 
+bool provisioning_send_info::send_table_triggers()
+{
+  // There is at least one database left for provisioning and
+  // table list is prepared
+  DBUG_ASSERT(!tables.is_empty() && !databases.is_empty());
+
+  LEX_STRING const *database= databases.head();
+  TABLE_LIST table_list;
+  if (open_table(&table_list, database, tables.head()))
+    return 1;
+
+  bool result= false;
+  TABLE *table= table_list.table;
+  Table_triggers_list *triggers= table->triggers;
+  
+  if (!triggers)
+  {
+    sql_print_information("No triggers discovered in `%s`.`%s`",
+                          database->str, tables.head());
+
+    close_tables();
+    return 0;
+  }
+
+  List_iterator_fast<ulonglong> it_sql_mode(triggers->definition_modes_list);
+  List_iterator_fast<LEX_STRING> it_sql_orig_stmt(triggers->definitions_list);
+  List_iterator_fast<LEX_STRING> it_client_cs_name(triggers->client_cs_names);
+  List_iterator_fast<LEX_STRING> it_connection_cl_name(triggers->connection_cl_names);
+  List_iterator_fast<LEX_STRING> it_db_cl_name(triggers->db_cl_names);
+
+  LEX_STRING *definition;
+  while ((definition= (LEX_STRING*)it_sql_orig_stmt.next_fast()) != NULL)
+  {
+    it_sql_mode.next_fast();
+    it_sql_orig_stmt.next_fast();
+
+    it_client_cs_name.next_fast();
+    it_connection_cl_name.next_fast();
+    it_db_cl_name.next_fast();
+
+    sql_print_information("Found trigger \n%s", definition->str);
+    if (send_query_log_event(definition, false, database))
+    {
+      result= true;
+      break;
+    }
+  }
+
+  close_tables();
   return result;
 }
 
@@ -617,14 +771,15 @@ int8 provisioning_send_info::send_provisioning_data()
     }
     case PROV_PHASE_TABLE_INIT:
     {
-      // No more tables to process for this database, try next
+      // No more tables to process for this database, proceed with events and
+      // routines
       if (tables.is_empty())
       {
         // FIXME - Farnham
         // Deletion of LEX_STRING allocated by thd
         databases.pop();
 
-        phase= PROV_PHASE_DB_INIT;
+        phase= PROV_PHASE_EVENTS;
         break;
       }
 
@@ -640,7 +795,7 @@ int8 provisioning_send_info::send_provisioning_data()
       // Error
       if (res == 1)
         return 1;
-      // Ok, no more data - next phase
+      // Ok, no more data - send triggers
       else if (res == 0)
         phase= PROV_PHASE_TRIGGERS;
       // else if ( res == -1)
@@ -650,8 +805,11 @@ int8 provisioning_send_info::send_provisioning_data()
     }
     case PROV_PHASE_TRIGGERS:
     {
-      // NYI
-      phase= PROV_PHASE_EVENTS;
+      if (send_table_triggers())
+        return 1;
+
+      free(tables.pop());
+      phase= PROV_PHASE_TABLE_INIT;
       break;
     }
     case PROV_PHASE_EVENTS:
@@ -662,8 +820,8 @@ int8 provisioning_send_info::send_provisioning_data()
     }
     case PROV_PHASE_ROUTINES:
     {
-      // NYI - last phase, try to work on next table
-      phase= PROV_PHASE_TABLE_INIT;
+      // NYI - database provisioned, try next one
+      phase= PROV_PHASE_DB_INIT;
       break;
     }
   }

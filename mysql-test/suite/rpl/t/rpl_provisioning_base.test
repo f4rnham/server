@@ -8,12 +8,11 @@
 --connection master
 RESET MASTER;
 
-USE test;
-CREATE TABLE test_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test_2 (a int, b int, c int, PRIMARY KEY (a));
+CREATE TABLE test.test_1 (a int, PRIMARY KEY (a));
+CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a));
 
-INSERT INTO test_1 VALUES (1), (2), (3), (4), (5);
-INSERT INTO test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
+INSERT INTO test.test_1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO test.test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
 
 # Create table with 100 rows
 CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a));
@@ -29,13 +28,21 @@ END|
 DELIMITER ;|
 CALL fill_big_table();
 
-CREATE DATABASE test2;
-USE test2;
-CREATE TABLE test2_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test2_2 (a int, b int, PRIMARY KEY (a));
+DELIMITER |;
+CREATE TRIGGER test.trigger_1
+AFTER UPDATE
+  ON test_1 FOR EACH ROW
+BEGIN
+  SET @test_var= 1;
+END|
+DELIMITER ;|
 
-INSERT INTO test2_1 VALUES (1), (2), (3), (4), (5);
-INSERT INTO test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
+CREATE DATABASE test2;
+CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a));
+CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a));
+
+INSERT INTO test2.test2_1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 
 # Start provisioning
 --connection slave
@@ -49,16 +56,19 @@ SHOW CREATE DATABASE test;
 SHOW CREATE DATABASE test2;
 SHOW CREATE TABLE test.test_1;
 SHOW CREATE TABLE test.test_2;
+SHOW CREATE TABLE test.big_table;
 SHOW CREATE TABLE test2.test2_1;
 SHOW CREATE TABLE test2.test2_2;
-SHOW CREATE TABLE test.big_table;
 
 # Check if row data were transferred
 SELECT * FROM test.test_1 ORDER BY a;
 SELECT * FROM test.test_2 ORDER BY a;
+SELECT * FROM test.big_table ORDER BY a;
 SELECT * FROM test2.test2_1 ORDER BY a;
 SELECT * FROM test2.test2_2 ORDER BY a;
-SELECT * FROM test.big_table ORDER BY a;
+
+# Check if triggers were transferred
+SHOW CREATE TRIGGER test.trigger_1;
 
 # Cleanup
 --connection master

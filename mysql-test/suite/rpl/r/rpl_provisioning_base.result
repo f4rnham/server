@@ -5,11 +5,10 @@ RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 RESET MASTER;
-USE test;
-CREATE TABLE test_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test_2 (a int, b int, c int, PRIMARY KEY (a));
-INSERT INTO test_1 VALUES (1), (2), (3), (4), (5);
-INSERT INTO test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
+CREATE TABLE test.test_1 (a int, PRIMARY KEY (a));
+CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a));
+INSERT INTO test.test_1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO test.test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
 CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a));
 CREATE PROCEDURE fill_big_table()
 BEGIN
@@ -20,12 +19,17 @@ SET v1 = v1 - 1;
 END WHILE;
 END|
 CALL fill_big_table();
+CREATE TRIGGER test.trigger_1
+AFTER UPDATE
+ON test_1 FOR EACH ROW
+BEGIN
+SET @test_var= 1;
+END|
 CREATE DATABASE test2;
-USE test2;
-CREATE TABLE test2_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test2_2 (a int, b int, PRIMARY KEY (a));
-INSERT INTO test2_1 VALUES (1), (2), (3), (4), (5);
-INSERT INTO test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
+CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a));
+CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a));
+INSERT INTO test2.test2_1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 LOAD DATA FROM MASTER;
 include/wait_for_slave_sql_to_stop.inc
 SHOW CREATE DATABASE test;
@@ -48,6 +52,12 @@ test_2	CREATE TABLE `test_2` (
   `c` int(11) DEFAULT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE TABLE test.big_table;
+Table	Create Table
+big_table	CREATE TABLE `big_table` (
+  `a` int(11) NOT NULL AUTO_INCREMENT,
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM AUTO_INCREMENT=101 DEFAULT CHARSET=latin1
 SHOW CREATE TABLE test2.test2_1;
 Table	Create Table
 test2_1	CREATE TABLE `test2_1` (
@@ -61,12 +71,6 @@ test2_2	CREATE TABLE `test2_2` (
   `b` int(11) DEFAULT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
-SHOW CREATE TABLE test.big_table;
-Table	Create Table
-big_table	CREATE TABLE `big_table` (
-  `a` int(11) NOT NULL AUTO_INCREMENT,
-  PRIMARY KEY (`a`)
-) ENGINE=MyISAM AUTO_INCREMENT=101 DEFAULT CHARSET=latin1
 SELECT * FROM test.test_1 ORDER BY a;
 a
 1
@@ -80,19 +84,6 @@ a	b	c
 2	2	2
 3	3	3
 4	4	4
-SELECT * FROM test2.test2_1 ORDER BY a;
-a
-1
-2
-3
-4
-5
-SELECT * FROM test2.test2_2 ORDER BY a;
-a	b
-1	1
-2	2
-3	3
-4	4
 SELECT * FROM test.big_table ORDER BY a;
 a
 1
@@ -195,6 +186,27 @@ a
 98
 99
 100
+SELECT * FROM test2.test2_1 ORDER BY a;
+a
+1
+2
+3
+4
+5
+SELECT * FROM test2.test2_2 ORDER BY a;
+a	b
+1	1
+2	2
+3	3
+4	4
+SHOW CREATE TRIGGER test.trigger_1;
+Trigger	sql_mode	SQL Original Statement	character_set_client	collation_connection	Database Collation
+trigger_1		CREATE DEFINER=`root`@`localhost` TRIGGER test.trigger_1
+AFTER UPDATE
+ON test_1 FOR EACH ROW
+BEGIN
+SET @test_var= 1;
+END	latin1	latin1_swedish_ci	latin1_swedish_ci
 DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP TABLE test.big_table;
