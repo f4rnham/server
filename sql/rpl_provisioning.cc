@@ -15,6 +15,7 @@
   @param[in] name   String to quote
   @param[out] buff  Destination buffer
 */
+
 void quote_name(char const *name, char *buff)
 {
   char *to= buff;
@@ -95,7 +96,7 @@ bool provisioning_send_info::prepare_row_buffer(TABLE *table,
 }
 
 /**
-  Opens one table and does all necessary checks
+  Opens one table and performs all necessary checks
 
   @param [out] table_list List which will contain opened table if function 
                           succeeds
@@ -403,8 +404,12 @@ bool provisioning_send_info::event_to_packet(Log_event &evt, String &packet)
   return false;
 }
 
-// FIXME - Farnham
-// Documentation
+/**
+  Converts <code>Log_event</code> to replication packet and sends it to slave
+
+  @return false - ok
+          true  - error
+ */
 
 bool provisioning_send_info::send_event(Log_event &evt)
 {
@@ -699,22 +704,11 @@ bool provisioning_send_info::send_table_triggers()
     return 0;
   }
 
-  List_iterator_fast<ulonglong> it_sql_mode(triggers->definition_modes_list);
   List_iterator_fast<LEX_STRING> it_sql_orig_stmt(triggers->definitions_list);
-  List_iterator_fast<LEX_STRING> it_client_cs_name(triggers->client_cs_names);
-  List_iterator_fast<LEX_STRING> it_connection_cl_name(triggers->connection_cl_names);
-  List_iterator_fast<LEX_STRING> it_db_cl_name(triggers->db_cl_names);
-
   LEX_STRING *definition;
+
   while ((definition= (LEX_STRING*)it_sql_orig_stmt.next_fast()) != NULL)
   {
-    it_sql_mode.next_fast();
-    it_sql_orig_stmt.next_fast();
-
-    it_client_cs_name.next_fast();
-    it_connection_cl_name.next_fast();
-    it_db_cl_name.next_fast();
-
     sql_print_information("Found trigger \n%s", definition->str);
     if (send_query_log_event(definition, false, database))
     {
@@ -726,6 +720,14 @@ bool provisioning_send_info::send_table_triggers()
   close_tables();
   return result;
 }
+
+/**
+  Sends <code>Provisioning_done_log_event</code> to slave indicating
+  end of provisioning
+
+  @return false - ok
+          true  - error
+ */
 
 bool provisioning_send_info::send_done_event()
 {
