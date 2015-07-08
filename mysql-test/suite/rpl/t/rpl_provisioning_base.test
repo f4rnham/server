@@ -14,6 +14,8 @@ CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a));
 INSERT INTO test.test_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test.test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
 
+CREATE VIEW test.v_1 AS SELECT test.test_1.a FROM test.test_1;
+
 # Create table with 100 rows
 CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a));
 DELIMITER |;
@@ -60,6 +62,8 @@ SHOW CREATE TABLE test.big_table;
 SHOW CREATE TABLE test2.test2_1;
 SHOW CREATE TABLE test2.test2_2;
 
+SHOW CREATE VIEW test.v_1;
+
 # Check if row data were transferred
 SELECT * FROM test.test_1 ORDER BY a;
 SELECT * FROM test.test_2 ORDER BY a;
@@ -76,6 +80,7 @@ DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP TABLE test.big_table;
 DROP DATABASE test2;
+DROP VIEW test.v_1;
 SET GLOBAL debug_dbug="";
 
 --connection slave
@@ -83,6 +88,7 @@ DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP TABLE test.big_table;
 DROP DATABASE test2;
+DROP VIEW test.v_1;
 SET GLOBAL debug_dbug="";
 
 --let $rpl_only_running_threads= 1

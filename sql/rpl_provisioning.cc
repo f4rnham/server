@@ -47,11 +47,19 @@ provisioning_send_info::~provisioning_send_info()
 {
   delete connection;
 
-  List_iterator_fast<char> it(tables);
+  List_iterator_fast<char> it_char(tables);
   void* name;
-  while ((name= it.next_fast()) != NULL)
+  while ((name= it_char.next_fast()) != NULL)
     // Names (char*) were allocated by my_strdup
     my_free(name);
+
+  List_iterator_fast<DYNAMIC_STRING> it_dynstr(views);
+  while ((name= it_dynstr.next_fast()) != NULL)
+  {
+    dynstr_free((DYNAMIC_STRING*)name);
+    // Names (DYNAMIC_STRING*) were allocated by my_malloc
+    my_free(name);
+  }
 
   // If error occurred, this may not be freed
   if (row_batch_end)
@@ -94,7 +102,7 @@ bool provisioning_send_info::prepare_row_buffer(TABLE *table,
 /**
   Opens one table and performs all necessary checks
 
-  @param [out] table_list List which will contain opened table if function 
+  @param [out] table_list List which will contain opened table if function
                           succeeds
   @param [in]  database   Name of database containing table to be opened
   @param [in]  table      Name of table to be opened
@@ -313,7 +321,7 @@ bool provisioning_send_info::build_table_list()
   LEX_STRING const *database= databases.head();
   char name_buff[NAME_LEN * 2 + 3];
 
-  init_dynamic_string(&query, "SHOW TABLES FROM ", 0, 0);
+  init_dynamic_string(&query, "SHOW FULL TABLES FROM ", 0, 0);
 
   quote_name(database->str, name_buff);
   dynstr_append(&query, name_buff);
@@ -321,14 +329,17 @@ bool provisioning_send_info::build_table_list()
   if (connection->execute_direct({ query.str, query.length }))
   {
     error_text= "Failed to query tables from database";
+    dynstr_free(&query);
     return true;
   }
 
+  dynstr_free(&query);
+
   Ed_result_set *result= connection->use_result_set();
 
-  // We are expecting exactly one result set with one column,
+  // We are expecting exactly one result set with two columns,
   // in any other case, something went wrong
-  if (!result || result->get_field_count() != 1 ||
+  if (!result || result->get_field_count() != 2 ||
       connection->has_next_result())
   {
     error_text= "Failed to read list of tables";
@@ -344,13 +355,40 @@ bool provisioning_send_info::build_table_list()
 
     // Field count for entire result set was already checked, recheck
     // in case of internal inconsistency
-    DBUG_ASSERT(row->size() == 1);
+    DBUG_ASSERT(row->size() == 2);
 
-    Ed_column const *column= row->get_column(0);
+    Ed_column const *name= row->get_column(0);
+    Ed_column const *type= row->get_column(1);
 
-    sql_print_information("Discovered table `%s`.`%s`", database->str,
-                          column->str);
-    tables.push_back(my_strdup(column->str, MYF(0)));
+    sql_print_information("Discovered %s `%s`.`%s`",
+                          my_strcasecmp(system_charset_info, "VIEW", type->str) ?
+                          "table" : "view",
+                          database->str,
+                          name->str);
+
+    if (my_strcasecmp(system_charset_info, "VIEW", type->str) == 0)
+    {
+      char name_buff[NAME_LEN * 2 + 3];
+      DYNAMIC_STRING *str= (DYNAMIC_STRING*)my_malloc(sizeof(DYNAMIC_STRING),
+                                                      MYF(0));
+
+      quote_name(database->str, name_buff);
+      init_dynamic_string(str, name_buff,
+                          // Both lengths + dot and quotes, will be reallocated
+                          // only in special cases
+                          database->length + name->length + 5,
+                          5);
+      dynstr_append(str, ".");
+      quote_name(name->str, name_buff);
+      dynstr_append(str, name_buff);
+
+      views.push_back(str);
+    }
+    else if (my_strcasecmp(system_charset_info, "BASE TABLE", type->str) == 0)
+      tables.push_back(my_strdup(name->str, MYF(0)));
+    else
+      DBUG_ASSERT(false &&
+                  "Unexpected type of table returned by 'SHOW FULL TABLES'");
   }
 
   return false;
@@ -479,9 +517,6 @@ bool provisioning_send_info::send_create_database()
 /**
   Creates and sends 'CREATE TABLE' <code>Query_log_event</code> for
   first table in <code>tables</code> list
-
-  FIXME - Farnham
-  View handling
 
   @return false - ok
           true  - error
@@ -694,7 +729,7 @@ bool provisioning_send_info::send_table_triggers()
   bool result= false;
   TABLE *table= table_list.table;
   Table_triggers_list *triggers= table->triggers;
-  
+
   if (!triggers)
   {
     sql_print_information("No triggers discovered in `%s`.`%s`",
@@ -719,6 +754,55 @@ bool provisioning_send_info::send_table_triggers()
 
   close_tables();
   return result;
+}
+
+/**
+  Creates and sends 'CREATE VIEW' <code>Query_log_event</code> for
+  first view in <code>views</code> list
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::send_create_view()
+{
+  DBUG_ASSERT(!views.is_empty());
+
+  DYNAMIC_STRING query;
+  DYNAMIC_STRING *name= views.head();
+
+  init_dynamic_string(&query, "SHOW CREATE VIEW ", 0, 0);
+  dynstr_append(&query, name->str);
+
+  if (connection->execute_direct({ query.str, query.length }))
+  {
+    error_text= "Failed to retrieve view structure";
+    return true;
+  }
+
+  Ed_result_set *result= connection->use_result_set();
+
+  // We are expecting exactly one result set with one row and four columns,
+  // in any other case, something went wrong
+  if (!result || result->size() != 1 || result->get_field_count() != 4 ||
+      connection->has_next_result())
+  {
+    error_text= "Failed to read view structure";
+    return true;
+  }
+
+  List<Ed_row>& rows= *result;
+  // First column is name of view, second is create query
+  Ed_column const *column= rows.head()->get_column(1);
+
+  sql_print_information("Got create view query for %s\n%s",
+                        name->str, column->str);
+
+  dynstr_free(name);
+  my_free(name);
+  views.pop();
+
+  return send_query_log_event(column);
 }
 
 /**
@@ -761,9 +845,12 @@ int8 provisioning_send_info::send_provisioning_data()
     }
     case PROV_PHASE_DB_INIT:
     {
-      // No more data to send
+      // No more data to send, send view structures
       if (databases.is_empty())
-        return send_done_event() ? 1 : 0;
+      {
+        phase= PROV_PHASE_VIEWS;
+        break;
+      }
 
       if (send_create_database() || build_table_list())
         return 1;
@@ -821,6 +908,16 @@ int8 provisioning_send_info::send_provisioning_data()
     {
       // NYI - database provisioned, try next one
       phase= PROV_PHASE_DB_INIT;
+      break;
+    }
+    case PROV_PHASE_VIEWS:
+    {
+      if (views.is_empty())
+        return send_done_event() ? 1 : 0;
+
+      if (send_create_view())
+        return 1;
+
       break;
     }
   }

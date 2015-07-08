@@ -9,6 +9,7 @@ CREATE TABLE test.test_1 (a int, PRIMARY KEY (a));
 CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a));
 INSERT INTO test.test_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test.test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
+CREATE VIEW test.v_1 AS SELECT test.test_1.a FROM test.test_1;
 CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a));
 CREATE PROCEDURE fill_big_table()
 BEGIN
@@ -71,6 +72,9 @@ test2_2	CREATE TABLE `test2_2` (
   `b` int(11) DEFAULT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE VIEW test.v_1;
+View	Create View	character_set_client	collation_connection
+v_1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `test`.`v_1` AS select `test`.`test_1`.`a` AS `a` from `test`.`test_1`	latin1	latin1_swedish_ci
 SELECT * FROM test.test_1 ORDER BY a;
 a
 1
@@ -211,11 +215,13 @@ DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP TABLE test.big_table;
 DROP DATABASE test2;
+DROP VIEW test.v_1;
 SET GLOBAL debug_dbug="";
 DROP TABLE test.test_1;
 DROP TABLE test.test_2;
 DROP TABLE test.big_table;
 DROP DATABASE test2;
+DROP VIEW test.v_1;
 SET GLOBAL debug_dbug="";
 include/rpl_end.inc
 DROP PROCEDURE test.fill_big_table;

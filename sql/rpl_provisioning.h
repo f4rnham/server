@@ -13,6 +13,30 @@ class Ed_connection;
 
   'Tick' mentioned in phase descriptions means one call of
   send_provisioning_data() function
+
+  Succession of phases if written in loops
+
+  PROV_PHASE_INIT // Fetches databases and views
+  while (databases)
+  {
+    PROV_PHASE_DB_INIT // Fetches tables
+    while (tables)
+    {
+      PROV_PHASE_TABLE_INIT
+      while (table data)
+      {
+        PROV_PHASE_TABLE_DATA
+      }
+      PROV_PHASE_TRIGGERS
+    }
+    PROV_PHASE_EVENTS
+    PROV_PHASE_ROUTINES
+  }
+  while (views)
+  {
+    PROV_PHASE_VIEWS
+  }
+
 */
 
 enum provisioning_phase
@@ -40,6 +64,10 @@ enum provisioning_phase
   PROV_PHASE_EVENTS,       // NYI
 
   PROV_PHASE_ROUTINES,     // NYI
+
+  PROV_PHASE_VIEWS,        // View creation
+                           // Executed at end, when all table data are sent
+                           // One view per tick
 };
 
 /*
@@ -80,6 +108,12 @@ class provisioning_send_info
     are removed after they are processed
   */
   List<LEX_STRING> databases;
+  /*
+    List of discovered views for provisioning, entries from this list are
+    removed after they are processed
+    View names here are in fully qualified quoted form, ie `db`.`view_name`
+  */
+  List<DYNAMIC_STRING> views;
   /*
     List of discovered tables for currently provisioned database (first in
     <code>databases</code> list)
@@ -139,6 +173,7 @@ private:
   bool send_create_database();
   bool send_create_table();
   bool send_table_triggers();
+  bool send_create_view();
 
   int8 send_table_data();
 
