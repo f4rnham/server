@@ -1,6 +1,5 @@
 // FIXME - Farnham
 // Header
-// Memory allocations - usage of my_* functions
 // Character sets, collations
 
 #include "rpl_provisioning.h"
@@ -36,7 +35,7 @@ provisioning_send_info::provisioning_send_info(THD *thd_arg)
   : thd(thd_arg)
   , connection(new Ed_connection(thd))
   , row_batch_end(NULL)
-  , row_buffer(malloc(ROW_BUFFER_DEFAULT_SIZE))
+  , row_buffer(my_malloc(ROW_BUFFER_DEFAULT_SIZE, MYF(0)))
   , row_buffer_size(ROW_BUFFER_DEFAULT_SIZE)
   , phase(PROV_PHASE_INIT)
   , error(0)
@@ -48,20 +47,17 @@ provisioning_send_info::~provisioning_send_info()
 {
   delete connection;
 
-  // FIXME - Farnham
-  // <code>databases</code> were allocated by thd mem root - how does it work?
-
   List_iterator_fast<char> it(tables);
   void* name;
   while ((name= it.next_fast()) != NULL)
-    // Names (char*) were allocated by strdup
-    free(name);
+    // Names (char*) were allocated by my_strdup
+    my_free(name);
 
   // If error occurred, this may not be freed
   if (row_batch_end)
     free_key_range();
 
-  free(row_buffer);
+  my_free(row_buffer);
 }
 
 /**
@@ -85,7 +81,7 @@ bool provisioning_send_info::prepare_row_buffer(TABLE *table,
     // Allocate a bit more than we need
     row_buffer_size= size_t(req_size * 1.1f);
 
-    if ((row_buffer= realloc(row_buffer, row_buffer_size)) == NULL)
+    if ((row_buffer= my_realloc(row_buffer, row_buffer_size, MYF(0))) == NULL)
     {
       error_text= "Out of memory";
       return true;
@@ -202,14 +198,15 @@ bool provisioning_send_info::allocate_key_range(TABLE *table)
   // Prevent allocation without free
   DBUG_ASSERT(row_batch_end == NULL);
 
-  row_batch_end= new key_range();
+  row_batch_end= (key_range*)my_malloc(sizeof(key_range), MYF(0));
   if (!row_batch_end)
     return true;
 
   row_batch_end->length= table->key_info->key_length;
   row_batch_end->keypart_map= HA_WHOLE_KEY;
   row_batch_end->flag= HA_READ_KEY_OR_NEXT;
-  row_batch_end->key= new uchar[row_batch_end->length];
+  row_batch_end->key= (uchar*)my_malloc(row_batch_end->length * sizeof(uchar),
+                                        MYF(0));
 
   return row_batch_end->key ? false : true;
 }
@@ -221,8 +218,8 @@ bool provisioning_send_info::allocate_key_range(TABLE *table)
 
 void provisioning_send_info::free_key_range()
 {
-  delete[] row_batch_end->key;
-  delete row_batch_end;
+  my_free((void*)row_batch_end->key);
+  my_free(row_batch_end);
   row_batch_end= NULL;
 }
 
@@ -271,9 +268,9 @@ bool provisioning_send_info::build_database_list()
     bool skip= false;
 
     // Skip mysql, information_schema and performance_schema databases
-    if (!strcmp(column->str, INFORMATION_SCHEMA_NAME.str) ||
-        !strcmp(column->str, PERFORMANCE_SCHEMA_DB_NAME.str) ||
-        !strcmp(column->str, MYSQL_SCHEMA_NAME.str))
+    if (!my_strcasecmp(system_charset_info, column->str, INFORMATION_SCHEMA_NAME.str) ||
+        !my_strcasecmp(system_charset_info, column->str, PERFORMANCE_SCHEMA_DB_NAME.str) ||
+        !my_strcasecmp(system_charset_info, column->str, MYSQL_SCHEMA_NAME.str))
     {
       skip= true;
     }
@@ -281,7 +278,10 @@ bool provisioning_send_info::build_database_list()
     // Skip test run database only if we are running test - there is small
     // chance, that regular user database is called 'mtr'
     DBUG_EXECUTE_IF("provisioning_test_running",
-                    if (!strcmp(column->str, "mtr")) skip= true;);
+    {
+      if (!my_strcasecmp(system_charset_info, column->str, "mtr"))
+        skip= true;
+    });
 
     if (skip)
       continue;
@@ -350,7 +350,7 @@ bool provisioning_send_info::build_table_list()
 
     sql_print_information("Discovered table `%s`.`%s`", database->str,
                           column->str);
-    tables.push_back(strdup(column->str));
+    tables.push_back(my_strdup(column->str, MYF(0)));
   }
 
   return false;
@@ -398,7 +398,7 @@ bool provisioning_send_info::event_to_packet(Log_event &evt, String &packet)
   // Set current server as source of event, when slave registers on master,
   // it overwrites thd->variables.server_id with its own server id - and it is
   // then used when writing event
-  packet[SERVER_ID_OFFSET + 1]= global_system_variables.server_id;
+  int4store(&packet[SERVER_ID_OFFSET + 1], global_system_variables.server_id);
 
   close_cached_file(&buffer);
   return false;
@@ -709,7 +709,7 @@ bool provisioning_send_info::send_table_triggers()
 
   while ((definition= (LEX_STRING*)it_sql_orig_stmt.next_fast()) != NULL)
   {
-    sql_print_information("Found trigger \n%s", definition->str);
+    sql_print_information("Found trigger\n%s", definition->str);
     if (send_query_log_event(definition, false, database))
     {
       result= true;
@@ -777,10 +777,7 @@ int8 provisioning_send_info::send_provisioning_data()
       // routines
       if (tables.is_empty())
       {
-        // FIXME - Farnham
-        // Deletion of LEX_STRING allocated by thd
         databases.pop();
-
         phase= PROV_PHASE_EVENTS;
         break;
       }
@@ -810,7 +807,7 @@ int8 provisioning_send_info::send_provisioning_data()
       if (send_table_triggers())
         return 1;
 
-      free(tables.pop());
+      my_free(tables.pop());
       phase= PROV_PHASE_TABLE_INIT;
       break;
     }
