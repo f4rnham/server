@@ -40,6 +40,7 @@ provisioning_send_info::provisioning_send_info(THD *thd_arg)
   , phase(PROV_PHASE_INIT)
   , error(0)
   , error_text(NULL)
+  , event_conversion_cache(NULL)
 {
 }
 
@@ -66,6 +67,12 @@ provisioning_send_info::~provisioning_send_info()
     free_key_range();
 
   my_free(row_buffer);
+
+  if (event_conversion_cache)
+  {
+    close_cached_file(event_conversion_cache);
+    my_free(event_conversion_cache);
+  }
 }
 
 /**
@@ -174,8 +181,6 @@ bool provisioning_send_info::send_query_log_event(LEX_STRING const *query,
     thd->reset_db(database->str, database->length);
   }
 
-  // FIXME - Farnham
-  // Double check exact meaning of all constructor parameters
   Query_log_event evt(thd, query->str, query->length,
                       false,        // using_trans
                       true,         // direct
@@ -399,37 +404,30 @@ bool provisioning_send_info::build_table_list()
 
   @return false - ok
           true  - error
-
-  FIXME - Farnham
-  Can be done better, at least open file only once and reset it
  */
 
 bool provisioning_send_info::event_to_packet(Log_event &evt, String &packet)
 {
-  IO_CACHE buffer;
-  if (open_cached_file(&buffer, mysql_tmpdir,
-                       TEMP_PREFIX, READ_RECORD_BUFFER, MYF(MY_WME)))
+  // Reset cache for writing
+  reinit_io_cache(event_conversion_cache, WRITE_CACHE, 0, false, true);
+
+  if (evt.write(event_conversion_cache))
   {
-    error_text= "Failed to prepare cache";
+    error_text= "Failed to write event to conversion cache";
     return true;
   }
 
-  if (evt.write(&buffer))
+  if (reinit_io_cache(event_conversion_cache, READ_CACHE, 0, false, false))
   {
-    error_text= "Failed to write event";
-    return true;
-  }
-
-  if (reinit_io_cache(&buffer, READ_CACHE, 0, false, false))
-  {
-    error_text= "Failed to switch cache mode";
+    error_text= "Failed to switch event conversion cache mode";
     return true;
   }
 
   packet.set("\0", 1, &my_charset_bin);
-  if (packet.append(&buffer, buffer.write_pos - buffer.buffer))
+  if (packet.append(event_conversion_cache,
+      event_conversion_cache->write_pos - event_conversion_cache->buffer))
   {
-    error_text= "Failed to write data to packet";
+    error_text= "Failed to write event data to packet";
     return true;
   }
 
@@ -437,8 +435,6 @@ bool provisioning_send_info::event_to_packet(Log_event &evt, String &packet)
   // it overwrites thd->variables.server_id with its own server id - and it is
   // then used when writing event
   int4store(&packet[SERVER_ID_OFFSET + 1], global_system_variables.server_id);
-
-  close_cached_file(&buffer);
   return false;
 }
 
@@ -956,6 +952,18 @@ int8 provisioning_send_info::send_provisioning_data()
   {
     case PROV_PHASE_INIT:
     {
+      event_conversion_cache= (IO_CACHE*)my_malloc(sizeof(IO_CACHE), MYF(0));
+
+      if (!event_conversion_cache ||
+          open_cached_file(event_conversion_cache, mysql_tmpdir,
+                           TEMP_PREFIX, READ_RECORD_BUFFER, MYF(MY_WME)))
+      {
+        error_text= "Failed to prepare event conversion cache";
+        my_free(event_conversion_cache);
+        event_conversion_cache= NULL;
+        return 1;
+      }
+
       if (build_database_list())
         return 1;
 

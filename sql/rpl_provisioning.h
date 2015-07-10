@@ -154,6 +154,7 @@ public:
     information
   */
   char const *error_text;
+private:
   /*
     Buffer used when custom message needs to be formatted, for example our
     error message connected with one from <code>Ed_connection</code>
@@ -161,6 +162,11 @@ public:
     If this buffer is used, then <code>error_text</code> points to it
   */
   char error_text_buffer[2000];
+  /*
+    Used for conversion of <code>Log_event</code> to packets which can be sent
+    to slave
+  */
+  IO_CACHE *event_conversion_cache;
 
 public:
   provisioning_send_info(THD *thd_arg);
