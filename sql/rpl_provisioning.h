@@ -154,6 +154,13 @@ public:
     information
   */
   char const *error_text;
+  /*
+    Buffer used when custom message needs to be formatted, for example our
+    error message connected with one from <code>Ed_connection</code>
+
+    If this buffer is used, then <code>error_text</code> points to it
+  */
+  char error_text_buffer[2000];
 
 public:
   provisioning_send_info(THD *thd_arg);
@@ -192,4 +199,6 @@ private:
 
   bool allocate_key_range(TABLE *table);
   void free_key_range();
+
+  void record_ed_connection_error(char const *msg);
 };

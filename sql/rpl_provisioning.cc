@@ -1,7 +1,6 @@
 // FIXME - Farnham
 // Header
 // Character sets, collations
-// Errors from execute_direct
 
 #include "rpl_provisioning.h"
 #include "log_event.h"
@@ -244,7 +243,7 @@ bool provisioning_send_info::build_database_list()
 {
   if (connection->execute_direct({ C_STRING_WITH_LEN("SHOW DATABASES") }))
   {
-    error_text= "Failed to query existing databases";
+    record_ed_connection_error("Failed to query existing databases");
     return true;
   }
 
@@ -329,7 +328,7 @@ bool provisioning_send_info::build_table_list()
 
   if (connection->execute_direct({ query.str, query.length }))
   {
-    error_text= "Failed to query tables from database";
+    record_ed_connection_error("Failed to query tables from database");
     dynstr_free(&query);
     return true;
   }
@@ -489,7 +488,7 @@ bool provisioning_send_info::send_create_database()
 
   if (connection->execute_direct({ query.str, query.length }))
   {
-    error_text= "Failed to retrieve database structure";
+    record_ed_connection_error("Failed to retrieve database structure");
     return true;
   }
 
@@ -544,7 +543,7 @@ bool provisioning_send_info::send_create_table()
 
   if (connection->execute_direct({ query.str, query.length }))
   {
-    error_text= "Failed to retrieve table structure";
+    record_ed_connection_error("Failed to retrieve table structure");
     return true;
   }
 
@@ -777,7 +776,7 @@ bool provisioning_send_info::send_create_view()
 
   if (connection->execute_direct({ query.str, query.length }))
   {
-    error_text= "Failed to retrieve view structure";
+    record_ed_connection_error("Failed to retrieve view structure");
     return true;
   }
 
@@ -844,7 +843,7 @@ bool provisioning_send_info::send_create_routines()
 
       if (connection->execute_direct({ query.str, query.length }))
       {
-        error_text= "Failed to query existing routines";
+        record_ed_connection_error("Failed to query existing routines");
         dynstr_free(&query);
         return true;
       }
@@ -897,7 +896,7 @@ bool provisioning_send_info::send_create_routines()
 
       if (connection->execute_direct({ query.str, query.length }))
       {
-        error_text= "Failed to query routine definition";
+        record_ed_connection_error("Failed to query routine definition");
         dynstr_free(&query);
         return true;
       }
@@ -1086,4 +1085,20 @@ void provisioning_send_info::format_error_message(char buffer[],
                 databases.is_empty() ? "<none>" : databases.head()->str,
                 tables.is_empty() ? "<none>" : tables.head());
   }
+}
+
+/**
+  Formats and stores error which occurred during <code>Ed_connection</code>
+  usage, call of one of its member functions failed
+
+  @param msg Message describing call which failed
+ */
+
+void provisioning_send_info::record_ed_connection_error(char const *msg)
+{
+  my_snprintf(error_text_buffer, sizeof(error_text_buffer),
+              "%s, underlying error code %u, underlying error message: %s",
+              msg, connection->get_last_errno(), connection->get_last_error());
+
+  error_text= error_text_buffer;
 }
