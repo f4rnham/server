@@ -818,8 +818,12 @@ bool provisioning_send_info::send_create_routines()
   char const *routine_type[]= { "FUNCTION", "PROCEDURE" };
   char name_buff[NAME_LEN * 2 + 3];
   char db_name_buff[NAME_LEN * 2 + 3];
+  char db_name_buff_escaped[NAME_LEN * 2 + 3];
 
   quote_name(database->str, db_name_buff);
+  escape_quotes_for_mysql(system_charset_info,
+                          db_name_buff_escaped, sizeof(db_name_buff_escaped),
+                          database->str, database->length);
 
   for (uint8 i= 0; i <= 1; ++i)
   {
@@ -832,9 +836,7 @@ bool provisioning_send_info::send_create_routines()
 
       dynstr_append(&query, routine_type[i]);
       dynstr_append(&query, " STATUS WHERE Db = '");
-      // FIXME - Farnham
-      // escaping?
-      dynstr_append(&query, database->str);
+      dynstr_append(&query, db_name_buff_escaped);
       dynstr_append(&query, "'");
 
       if (connection->execute_direct({ query.str, query.length }))
