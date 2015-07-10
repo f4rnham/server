@@ -19,7 +19,7 @@ CREATE VIEW test.v_1 AS SELECT test.test_1.a FROM test.test_1;
 # Create table with 100 rows
 CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a));
 DELIMITER |;
-CREATE PROCEDURE fill_big_table()
+CREATE PROCEDURE test.fill_big_table()
 BEGIN
   DECLARE v1 INT DEFAULT 100;
   WHILE v1 > 0 DO
@@ -28,7 +28,7 @@ BEGIN
   END WHILE;
 END|
 DELIMITER ;|
-CALL fill_big_table();
+CALL test.fill_big_table();
 
 DELIMITER |;
 CREATE TRIGGER test.trigger_1
@@ -53,7 +53,7 @@ LOAD DATA FROM MASTER;
 # Provisioning is completed after sql thread was shut down
 --source include/wait_for_slave_sql_to_stop.inc
 
-# Check if database and table structures were transferred
+# Check if database, table / view structures and routines were transferred
 SHOW CREATE DATABASE test;
 SHOW CREATE DATABASE test2;
 SHOW CREATE TABLE test.test_1;
@@ -63,6 +63,8 @@ SHOW CREATE TABLE test2.test2_1;
 SHOW CREATE TABLE test2.test2_2;
 
 SHOW CREATE VIEW test.v_1;
+
+SHOW CREATE PROCEDURE test.fill_big_table;
 
 # Check if row data were transferred
 SELECT * FROM test.test_1 ORDER BY a;
@@ -81,6 +83,7 @@ DROP TABLE test.test_2;
 DROP TABLE test.big_table;
 DROP DATABASE test2;
 DROP VIEW test.v_1;
+DROP PROCEDURE test.fill_big_table;
 SET GLOBAL debug_dbug="";
 
 --connection slave
@@ -89,9 +92,8 @@ DROP TABLE test.test_2;
 DROP TABLE test.big_table;
 DROP DATABASE test2;
 DROP VIEW test.v_1;
+DROP PROCEDURE test.fill_big_table;
 SET GLOBAL debug_dbug="";
 
 --let $rpl_only_running_threads= 1
 --source include/rpl_end.inc
-
-DROP PROCEDURE test.fill_big_table;

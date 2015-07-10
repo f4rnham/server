@@ -1,6 +1,7 @@
 // FIXME - Farnham
 // Header
 // Character sets, collations
+// Errors from execute_direct
 
 #include "rpl_provisioning.h"
 #include "log_event.h"
@@ -806,6 +807,125 @@ bool provisioning_send_info::send_create_view()
 }
 
 /**
+  Creates and sends 'CREATE { PROCEDURE | FUNCTION }'
+  <code>Query_log_event</code> s for first database in
+  <code>databases</code> list
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::send_create_routines()
+{
+  DBUG_ASSERT(!databases.is_empty());
+
+  LEX_STRING const *database= databases.head();
+  char const *routine_type[]= { "FUNCTION", "PROCEDURE" };
+  char name_buff[NAME_LEN * 2 + 3];
+  char db_name_buff[NAME_LEN * 2 + 3];
+
+  quote_name(database->str, db_name_buff);
+
+  for (uint8 i= 0; i <= 1; ++i)
+  {
+    DYNAMIC_STRING query;
+    List<char> routines;
+
+    // Fetch function / procedure names
+    {
+      init_dynamic_string(&query, "SHOW ", 0, 0);
+
+      dynstr_append(&query, routine_type[i]);
+      dynstr_append(&query, " STATUS WHERE Db = '");
+      // FIXME - Farnham
+      // escaping?
+      dynstr_append(&query, database->str);
+      dynstr_append(&query, "'");
+
+      if (connection->execute_direct({ query.str, query.length }))
+      {
+        error_text= "Failed to query existing routines";
+        dynstr_free(&query);
+        return true;
+      }
+
+      dynstr_free(&query);
+      Ed_result_set *result= connection->use_result_set();
+
+      // We are expecting exactly one result set with 11 columns,
+      // in any other case, something went wrong
+      if (!result || result->get_field_count() != 11 ||
+          connection->has_next_result())
+      {
+        error_text= "Failed to read list of routines";
+        return true;
+      }
+
+      List<Ed_row>& rows= *result;
+      List_iterator_fast<Ed_row> it(rows);
+
+      for (uint32 j= 0; j < rows.elements; ++j)
+      {
+        Ed_row *row= it++;
+
+        // Field count for entire result set was already checked, recheck
+        // in case of internal inconsistency
+        DBUG_ASSERT(row->size() == 11);
+
+        Ed_column const *name= row->get_column(1);
+
+        sql_print_information("Discovered %s: %s", routine_type[i], name->str);
+        routines.push_back(my_strdup(name->str, MYF(0)));
+      }
+    }
+
+    // Fetch function / procedure definitions and send them to slave
+    while (!routines.is_empty())
+    {
+      char *name= routines.pop();
+
+      quote_name(name, name_buff);
+      my_free(name);
+      name= NULL;
+
+      init_dynamic_string(&query, "SHOW CREATE ", 0, 0);
+      dynstr_append(&query, routine_type[i]);
+      dynstr_append(&query, " ");
+      dynstr_append(&query, db_name_buff);
+      dynstr_append(&query, ".");
+      dynstr_append(&query, name_buff);
+
+      if (connection->execute_direct({ query.str, query.length }))
+      {
+        error_text= "Failed to query routine definition";
+        dynstr_free(&query);
+        return true;
+      }
+
+      dynstr_free(&query);
+      Ed_result_set *result= connection->use_result_set();
+
+      // We are expecting exactly one result set with one row and 6 columns,
+      // in any other case, something went wrong
+      if (!result || result->size() != 1 || result->get_field_count() != 6 ||
+          connection->has_next_result())
+      {
+        error_text= "Failed to read definition of routine";
+        return true;
+      }
+
+      List<Ed_row>& rows= *result;
+      Ed_column const *definition= rows.head()->get_column(2);
+
+      if (send_query_log_event(definition, false, database))
+        return true;
+    }
+  }
+
+  return false;
+}
+
+/**
   Sends <code>Provisioning_done_log_event</code> to slave indicating
   end of provisioning
 
@@ -864,7 +984,6 @@ int8 provisioning_send_info::send_provisioning_data()
       // routines
       if (tables.is_empty())
       {
-        databases.pop();
         phase= PROV_PHASE_EVENTS;
         break;
       }
@@ -906,7 +1025,11 @@ int8 provisioning_send_info::send_provisioning_data()
     }
     case PROV_PHASE_ROUTINES:
     {
-      // NYI - database provisioned, try next one
+      if (send_create_routines())
+        return 1;
+
+      // Database provisioned, try next one
+      databases.pop();
       phase= PROV_PHASE_DB_INIT;
       break;
     }

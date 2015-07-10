@@ -63,7 +63,9 @@ enum provisioning_phase
 
   PROV_PHASE_EVENTS,       // NYI
 
-  PROV_PHASE_ROUTINES,     // NYI
+  PROV_PHASE_ROUTINES,     // Function / procedure creation
+                           // Executed for each database
+                           // Processed during one tick
 
   PROV_PHASE_VIEWS,        // View creation
                            // Executed at end, when all table data are sent
@@ -174,6 +176,7 @@ private:
   bool send_create_table();
   bool send_table_triggers();
   bool send_create_view();
+  bool send_create_routines();
 
   int8 send_table_data();
 
