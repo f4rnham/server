@@ -45,7 +45,10 @@ CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 --connection master
 DROP TABLE test.t1;
 --connection slave
+# Creation of database `test` depends purely on timing and it has nothing to do with this test case
+--disable_warnings
 DROP DATABASE IF EXISTS test;
+--enable_warnings
 
 #
 # Disconnect during provisioning
