@@ -230,5 +230,7 @@ private:
 
   void switch_sql_mode(DYNAMIC_STRING *query,
     ulonglong sql_mode);
+  void switch_sql_mode(DYNAMIC_STRING *query,
+    char const *sql_mode);
   void restore_sql_mode(DYNAMIC_STRING *query);
 };

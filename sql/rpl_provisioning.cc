@@ -355,10 +355,16 @@ void provisioning_send_info::switch_sql_mode(DYNAMIC_STRING *query,
 {
   LEX_STRING sql_mode_str;
   sql_mode_string_representation(thd, sql_mode, &sql_mode_str);
+  switch_sql_mode(query, sql_mode_str.str);
+}
 
+
+void provisioning_send_info::switch_sql_mode(DYNAMIC_STRING *query,
+                                             char const *sql_mode)
+{
   dynstr_append(query, "SET @saved_sql_mode = @@sql_mode;\n");
   dynstr_append(query, "SET sql_mode = '");
-  dynstr_append(query, sql_mode_str.str);
+  dynstr_append(query, sql_mode);
   dynstr_append(query, "';\n");
 }
 
@@ -1010,6 +1016,8 @@ bool provisioning_send_info::send_create_routines()
                           db_name_buff_escaped, sizeof(db_name_buff_escaped),
                           database->str, database->length);
 
+  CHARSET_INFO* original_db_cl = get_default_db_collation(thd, database->str);
+
   for (uint8 i= 0; i <= 1; ++i)
   {
     DYNAMIC_STRING query;
@@ -1097,10 +1105,43 @@ bool provisioning_send_info::send_create_routines()
       }
 
       List<Ed_row>& rows= *result;
-      Ed_column const *definition= rows.head()->get_column(2);
+      Ed_row *row= rows.head();
+      Ed_column const *definition= row->get_column(2);
+      int db_cl_altered= 0;
 
-      if (send_query_log_event(definition, false, database))
+      init_dynamic_string(&query, "", 0x100, 0);
+
+      if (switch_db_collation(&query, database->str,
+        row->get_column(5)->str, original_db_cl,
+        &db_cl_altered))
+      {
+        dynstr_free(&query);
         return true;
+      }
+
+      switch_cs_variables(&query,
+                          row->get_column(3)->str,
+                          row->get_column(4)->str);
+
+      switch_sql_mode(&query, row->get_column(1)->str);
+
+      dynstr_append(&query, "DELIMITER ;;\n");
+      dynstr_append(&query, definition->str);
+      dynstr_append(&query, "\n;;\nDELIMITER ;\n");
+
+      restore_sql_mode(&query);
+      restore_cs_variables(&query);
+
+      if (db_cl_altered)
+        restore_db_collation(&query, database->str, original_db_cl);
+
+      if (send_query_log_event(&query, false, database))
+      {
+        dynstr_free(&query);
+        return true;
+      }
+
+      dynstr_free(&query);
     }
   }
 
