@@ -1,12 +1,18 @@
 // FIXME - Farnham
 // Header
 // Character sets, collations
+//  documentation, formatting, tests
+//  triggers - done
+//  events
+//  routines
 
 #include "rpl_provisioning.h"
 #include "log_event.h"
 #include "sql_prepare.h"
 #include "sql_base.h"
 #include "key.h"
+#include "sql_db.h"
+#include "set_var.h"
 
 /*
   Quotes a string using backticks
@@ -153,6 +159,22 @@ void provisioning_send_info::close_tables()
   thd->mdl_context.release_transactional_locks();
 }
 
+bool provisioning_send_info::send_query_log_event(
+  DYNAMIC_STRING const *query,
+  bool suppress_use,
+  LEX_STRING const *database)
+{
+  return send_query_log_event(query->str, query->length, suppress_use, database);
+}
+
+bool provisioning_send_info::send_query_log_event(
+  LEX_STRING const *query,
+  bool suppress_use,
+  LEX_STRING const *database)
+{
+  return send_query_log_event(query->str, query->length, suppress_use, database);
+}
+
 /**
   Create query log event from provided query and send it to slave
 
@@ -166,7 +188,8 @@ void provisioning_send_info::close_tables()
           true  - error
  */
 
-bool provisioning_send_info::send_query_log_event(LEX_STRING const *query,
+bool provisioning_send_info::send_query_log_event(char const *query,
+                                                  size_t const query_length,
                                                   bool suppress_use,
                                                   LEX_STRING const *database)
 {
@@ -181,7 +204,7 @@ bool provisioning_send_info::send_query_log_event(LEX_STRING const *query,
     thd->reset_db(database->str, database->length);
   }
 
-  Query_log_event evt(thd, query->str, query->length,
+  Query_log_event evt(thd, query, query_length,
                       false,        // using_trans
                       true,         // direct
                       suppress_use, // suppress_use
@@ -235,6 +258,120 @@ void provisioning_send_info::free_key_range()
   my_free(row_batch_end);
   row_batch_end= NULL;
 }
+
+/*
+  Collation and charset changing start
+  FIXME - Farnham
+*/
+
+bool provisioning_send_info::switch_db_collation(
+  DYNAMIC_STRING *query,
+  char const *db_name,
+  const char *required_db_cl_name,
+  CHARSET_INFO *db_cl,
+  int *db_cl_altered)
+{
+  if (strcmp(db_cl->name, required_db_cl_name) != 0)
+  {
+    char quoted_db_buf[NAME_LEN * 2 + 3];
+    quote_name(db_name, quoted_db_buf);
+
+    CHARSET_INFO *db_cl = get_charset_by_name(required_db_cl_name, MYF(0));
+    if (!db_cl)
+    {
+      error_text= "FIXME - Farnham";
+      return true;
+    }
+
+    dynstr_append(query, "ALTER DATABASE ");
+    dynstr_append(query, quoted_db_buf);
+    dynstr_append(query, " CHARACTER SET ");
+    dynstr_append(query, db_cl->csname);
+    dynstr_append(query, " COLLATE ");
+    dynstr_append(query, db_cl->name);
+    dynstr_append(query, ";\n");
+
+    *db_cl_altered= 1;
+    return false;
+  }
+
+  *db_cl_altered= 0;
+  return false;
+}
+
+void provisioning_send_info::restore_db_collation(
+  DYNAMIC_STRING *query,
+  char const *db_name,
+  CHARSET_INFO *db_cl)
+{
+  char quoted_db_buf[NAME_LEN * 2 + 3];
+  quote_name(db_name, quoted_db_buf);
+
+  dynstr_append(query, "ALTER DATABASE ");
+  dynstr_append(query, quoted_db_buf);
+  dynstr_append(query, " CHARACTER SET ");
+  dynstr_append(query, db_cl->csname);
+  dynstr_append(query, " COLLATE ");
+  dynstr_append(query, db_cl->name);
+  dynstr_append(query, ";\n");
+}
+
+
+void provisioning_send_info::switch_cs_variables(DYNAMIC_STRING *query,
+                                char const *character_set,
+                                char const *collation_connection)
+{
+  dynstr_append(query,
+    "SET @saved_cs_client      = @@character_set_client;\n"
+    "SET @saved_cs_results     = @@character_set_results;\n"
+    "SET @saved_col_connection = @@collation_connection;\n"
+    );
+
+  dynstr_append(query, "SET character_set_client = ");
+  dynstr_append(query, character_set);
+  dynstr_append(query, ";\n");
+
+  dynstr_append(query, "SET character_set_results = ");
+  dynstr_append(query, character_set);
+  dynstr_append(query, ";\n");
+
+  dynstr_append(query, "SET collation_connection = ");
+  dynstr_append(query, collation_connection);
+  dynstr_append(query, ";\n");
+}
+
+
+void provisioning_send_info::restore_cs_variables(DYNAMIC_STRING *query)
+{
+  dynstr_append(query,
+    "SET character_set_client  = @saved_cs_client;\n"
+    "SET character_set_results = @saved_cs_results;\n"
+    "SET collation_connection  = @saved_col_connection;\n");
+}
+
+
+void provisioning_send_info::switch_sql_mode(DYNAMIC_STRING *query,
+                            ulonglong sql_mode)
+{
+  LEX_STRING sql_mode_str;
+  sql_mode_string_representation(thd, sql_mode, &sql_mode_str);
+
+  dynstr_append(query, "SET @saved_sql_mode = @@sql_mode;\n");
+  dynstr_append(query, "SET sql_mode = '");
+  dynstr_append(query, sql_mode_str.str);
+  dynstr_append(query, "';\n");
+}
+
+
+void provisioning_send_info::restore_sql_mode(DYNAMIC_STRING *query)
+{
+  dynstr_append(query, "SET sql_mode = @saved_sql_mode;\n");
+}
+
+/*
+  FIXME - Farnham
+  Collation and charset changing end
+*/
 
 /**
   Builds list of databases and stores it in <code>databases</code> list
@@ -454,7 +591,7 @@ bool provisioning_send_info::send_event(Log_event &evt)
 
   if (my_net_write(&thd->net, (uchar*)packet.ptr(), packet.length()))
   {
-    error_text= "Failed to send event to slave";
+    error_text= "Failed to send event packet to slave";
     return true;
   }
 
@@ -736,17 +873,65 @@ bool provisioning_send_info::send_table_triggers()
   }
 
   List_iterator_fast<LEX_STRING> it_sql_orig_stmt(triggers->definitions_list);
-  LEX_STRING *definition;
+  List_iterator_fast<LEX_STRING> it_db_cl_name(triggers->db_cl_names);
+  List_iterator_fast<LEX_STRING> it_client_cs_name(triggers->client_cs_names);
+  List_iterator_fast<LEX_STRING> it_connection_cl_name(triggers->connection_cl_names);
+  List_iterator_fast<ulonglong> it_sql_mode(triggers->definition_modes_list);
+  LEX_STRING *definition, *db_cl_name, *client_cs_name, *connection_cl_name;
+  ulonglong *sql_mode;
+  DYNAMIC_STRING query;
+
+  CHARSET_INFO* original_db_cl= get_default_db_collation(thd, database->str);
 
   while ((definition= (LEX_STRING*)it_sql_orig_stmt.next_fast()) != NULL)
   {
+    int db_cl_altered= 0;
+    db_cl_name= (LEX_STRING*)it_db_cl_name.next_fast();
+    client_cs_name= (LEX_STRING*)it_client_cs_name.next_fast();
+    connection_cl_name = (LEX_STRING*)it_connection_cl_name.next_fast();
+    sql_mode= (ulonglong*)it_sql_mode.next_fast();
+
+    DBUG_ASSERT(db_cl_name && client_cs_name && connection_cl_name && sql_mode);
+
     sql_print_information("Found trigger\n%s", definition->str);
-    if (send_query_log_event(definition, false, database))
+
+    init_dynamic_string(&query, "", 0x100, 0);
+
+    if (switch_db_collation(&query, database->str,
+      db_cl_name->str, original_db_cl, &db_cl_altered))
     {
       result= true;
       break;
     }
+
+    switch_cs_variables(&query,
+        client_cs_name->str,
+        connection_cl_name->str);
+
+    switch_sql_mode(&query, *sql_mode);
+
+    dynstr_append(&query, "DELIMITER ;;\n");
+    dynstr_append(&query, definition->str);
+    dynstr_append(&query, "\n;;\nDELIMITER ;\n");
+
+    restore_sql_mode(&query);
+    restore_cs_variables(&query);
+
+    if (db_cl_altered)
+      restore_db_collation(&query, database->str, original_db_cl);
+
+    if (send_query_log_event(&query, false, database))
+    {
+      result= true;
+      break;
+    }
+
+    dynstr_free(&query);
   }
+
+  // If error occurred, preform skipped cleanup
+  if (result)
+    dynstr_free(&query);
 
   close_tables();
   return result;

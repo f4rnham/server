@@ -200,11 +200,35 @@ private:
   bool open_table(TABLE_LIST *table_list, LEX_STRING const *database,
                   char const *table);
   void close_tables();
+
   bool send_query_log_event(LEX_STRING const *query, bool suppress_use= true,
+                            LEX_STRING const *database= NULL);
+  bool send_query_log_event(DYNAMIC_STRING const *query, bool suppress_use= true,
+                            LEX_STRING const *database= NULL);
+  bool send_query_log_event(char const *query, size_t const query_length,
+                            bool suppress_use= true,
                             LEX_STRING const *database= NULL);
 
   bool allocate_key_range(TABLE *table);
   void free_key_range();
 
   void record_ed_connection_error(char const *msg);
+
+  bool switch_db_collation(DYNAMIC_STRING *query,
+    char const *db_name,
+    char const *required_db_cl_name,
+    CHARSET_INFO *db_cl,
+    int *db_cl_altered);
+  void restore_db_collation(DYNAMIC_STRING *query,
+    char const *db_name,
+    CHARSET_INFO *db_cl);
+
+  void switch_cs_variables(DYNAMIC_STRING *query,
+    char const *character_set,
+    char const *collation_connection);
+  void restore_cs_variables(DYNAMIC_STRING *query);
+
+  void switch_sql_mode(DYNAMIC_STRING *query,
+    ulonglong sql_mode);
+  void restore_sql_mode(DYNAMIC_STRING *query);
 };
