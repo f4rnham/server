@@ -1,0 +1,57 @@
+# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
+# Tested functionality of LOAD DATA FROM MASTER - provisioning of objects
+# with special character sets and collations
+
+--source include/rpl_provisioning_init.inc
+
+# Create databases and tables on master + fill them with data
+--connection master
+RESET MASTER;
+
+USE `test`;
+SET @@local.character_set_connection='latin1';
+
+DELIMITER ;;
+CREATE PROCEDURE `test`.`x`()
+BEGIN
+	SELECT CHARSET('x');
+END;
+;;
+DELIMITER ;
+
+SET @@local.character_set_connection='utf8';
+
+DELIMITER ;;
+CREATE PROCEDURE `test`.`y`()
+BEGIN
+	SELECT CHARSET('y');
+END;
+;;
+DELIMITER ;
+
+
+# Start provisioning
+--connection slave
+LOAD DATA FROM MASTER;
+
+# Provisioning is completed after sql thread was shut down
+--source include/wait_for_slave_sql_to_stop.inc
+
+# Check if objects were transferred
+CALL `test`.`x`();
+CALL `test`.`y`();
+
+
+# Cleanup
+--connection master
+DROP PROCEDURE `test`.`x`;
+DROP PROCEDURE `test`.`y`;
+SET GLOBAL debug_dbug="";
+
+--connection slave
+DROP PROCEDURE `test`.`x`;
+DROP PROCEDURE `test`.`y`;
+SET GLOBAL debug_dbug="";
+
+--let $rpl_only_running_threads= 1
+--source include/rpl_end.inc

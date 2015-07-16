@@ -85,6 +85,20 @@ enum provisioning_phase
 #define ROW_BUFFER_DEFAULT_SIZE 0x400
 
 /*
+  Structure holding data for log events, requiring character
+  set and collation changes
+*/
+
+struct provisioning_cs_info
+{
+  uint32 cs_client;
+  uint32 cl_connection;
+  uint32 cl_server; // UNUSED
+  uint32 cl_db;
+  ulong sql_mode;
+};
+
+/*
   Helper structure, used to store info about state of ongoing provisioning
 
   If we are processing database, it is always first (<code>head()</code>) one
@@ -202,35 +216,18 @@ private:
   void close_tables();
 
   bool send_query_log_event(LEX_STRING const *query, bool suppress_use= true,
-                            LEX_STRING const *database= NULL);
+                            LEX_STRING const *database= NULL,
+                            provisioning_cs_info *cs_info= NULL);
   bool send_query_log_event(DYNAMIC_STRING const *query, bool suppress_use= true,
-                            LEX_STRING const *database= NULL);
+                            LEX_STRING const *database= NULL,
+                            provisioning_cs_info *cs_info = NULL);
   bool send_query_log_event(char const *query, size_t const query_length,
                             bool suppress_use= true,
-                            LEX_STRING const *database= NULL);
+                            LEX_STRING const *database= NULL,
+                            provisioning_cs_info *cs_info = NULL);
 
   bool allocate_key_range(TABLE *table);
   void free_key_range();
 
   void record_ed_connection_error(char const *msg);
-
-  bool switch_db_collation(DYNAMIC_STRING *query,
-    char const *db_name,
-    char const *required_db_cl_name,
-    CHARSET_INFO *db_cl,
-    int *db_cl_altered);
-  void restore_db_collation(DYNAMIC_STRING *query,
-    char const *db_name,
-    CHARSET_INFO *db_cl);
-
-  void switch_cs_variables(DYNAMIC_STRING *query,
-    char const *character_set,
-    char const *collation_connection);
-  void restore_cs_variables(DYNAMIC_STRING *query);
-
-  void switch_sql_mode(DYNAMIC_STRING *query,
-    ulonglong sql_mode);
-  void switch_sql_mode(DYNAMIC_STRING *query,
-    char const *sql_mode);
-  void restore_sql_mode(DYNAMIC_STRING *query);
 };

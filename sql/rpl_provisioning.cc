@@ -162,17 +162,19 @@ void provisioning_send_info::close_tables()
 bool provisioning_send_info::send_query_log_event(
   DYNAMIC_STRING const *query,
   bool suppress_use,
-  LEX_STRING const *database)
+  LEX_STRING const *database,
+  provisioning_cs_info *cs_info)
 {
-  return send_query_log_event(query->str, query->length, suppress_use, database);
+  return send_query_log_event(query->str, query->length, suppress_use, database, cs_info);
 }
 
 bool provisioning_send_info::send_query_log_event(
   LEX_STRING const *query,
   bool suppress_use,
-  LEX_STRING const *database)
+  LEX_STRING const *database,
+  provisioning_cs_info *cs_info)
 {
-  return send_query_log_event(query->str, query->length, suppress_use, database);
+  return send_query_log_event(query->str, query->length, suppress_use, database, cs_info);
 }
 
 /**
@@ -183,6 +185,8 @@ bool provisioning_send_info::send_query_log_event(
                       switches thread database
   @param database     Database in which query has to be executed, not null
                       only if suppress_use == false
+  @param cs_info      If not NULL, information about required character set
+                      settings
 
   @return false - ok
           true  - error
@@ -191,7 +195,8 @@ bool provisioning_send_info::send_query_log_event(
 bool provisioning_send_info::send_query_log_event(char const *query,
                                                   size_t const query_length,
                                                   bool suppress_use,
-                                                  LEX_STRING const *database)
+                                                  LEX_STRING const *database,
+                                                  provisioning_cs_info *cs_info)
 {
   char *old_db;
   size_t old_db_length;
@@ -209,6 +214,17 @@ bool provisioning_send_info::send_query_log_event(char const *query,
                       true,         // direct
                       suppress_use, // suppress_use
                       0);           // error
+
+  if (cs_info)
+  {
+    int2store(evt.charset, cs_info->cs_client); // thd_arg->variables.character_set_client->number
+    int2store(evt.charset + 2, cs_info->cl_connection); // thd_arg->variables.collation_connection->number
+    int2store(evt.charset + 4, /*cs_info->cl_server*/ thd->variables.collation_server->number);
+    evt.charset_database_number = cs_info->cl_db; // thd_arg->variables.collation_database->number
+
+    evt.sql_mode_inited = 1;
+    evt.sql_mode = cs_info->sql_mode;
+  }
 
   bool res= false;
   if (send_event(evt))
@@ -258,126 +274,6 @@ void provisioning_send_info::free_key_range()
   my_free(row_batch_end);
   row_batch_end= NULL;
 }
-
-/*
-  Collation and charset changing start
-  FIXME - Farnham
-*/
-
-bool provisioning_send_info::switch_db_collation(
-  DYNAMIC_STRING *query,
-  char const *db_name,
-  const char *required_db_cl_name,
-  CHARSET_INFO *db_cl,
-  int *db_cl_altered)
-{
-  if (strcmp(db_cl->name, required_db_cl_name) != 0)
-  {
-    char quoted_db_buf[NAME_LEN * 2 + 3];
-    quote_name(db_name, quoted_db_buf);
-
-    CHARSET_INFO *db_cl = get_charset_by_name(required_db_cl_name, MYF(0));
-    if (!db_cl)
-    {
-      error_text= "FIXME - Farnham";
-      return true;
-    }
-
-    dynstr_append(query, "ALTER DATABASE ");
-    dynstr_append(query, quoted_db_buf);
-    dynstr_append(query, " CHARACTER SET ");
-    dynstr_append(query, db_cl->csname);
-    dynstr_append(query, " COLLATE ");
-    dynstr_append(query, db_cl->name);
-    dynstr_append(query, ";\n");
-
-    *db_cl_altered= 1;
-    return false;
-  }
-
-  *db_cl_altered= 0;
-  return false;
-}
-
-void provisioning_send_info::restore_db_collation(
-  DYNAMIC_STRING *query,
-  char const *db_name,
-  CHARSET_INFO *db_cl)
-{
-  char quoted_db_buf[NAME_LEN * 2 + 3];
-  quote_name(db_name, quoted_db_buf);
-
-  dynstr_append(query, "ALTER DATABASE ");
-  dynstr_append(query, quoted_db_buf);
-  dynstr_append(query, " CHARACTER SET ");
-  dynstr_append(query, db_cl->csname);
-  dynstr_append(query, " COLLATE ");
-  dynstr_append(query, db_cl->name);
-  dynstr_append(query, ";\n");
-}
-
-
-void provisioning_send_info::switch_cs_variables(DYNAMIC_STRING *query,
-                                char const *character_set,
-                                char const *collation_connection)
-{
-  dynstr_append(query,
-    "SET @saved_cs_client      = @@character_set_client;\n"
-    "SET @saved_cs_results     = @@character_set_results;\n"
-    "SET @saved_col_connection = @@collation_connection;\n"
-    );
-
-  dynstr_append(query, "SET character_set_client = ");
-  dynstr_append(query, character_set);
-  dynstr_append(query, ";\n");
-
-  dynstr_append(query, "SET character_set_results = ");
-  dynstr_append(query, character_set);
-  dynstr_append(query, ";\n");
-
-  dynstr_append(query, "SET collation_connection = ");
-  dynstr_append(query, collation_connection);
-  dynstr_append(query, ";\n");
-}
-
-
-void provisioning_send_info::restore_cs_variables(DYNAMIC_STRING *query)
-{
-  dynstr_append(query,
-    "SET character_set_client  = @saved_cs_client;\n"
-    "SET character_set_results = @saved_cs_results;\n"
-    "SET collation_connection  = @saved_col_connection;\n");
-}
-
-
-void provisioning_send_info::switch_sql_mode(DYNAMIC_STRING *query,
-                            ulonglong sql_mode)
-{
-  LEX_STRING sql_mode_str;
-  sql_mode_string_representation(thd, sql_mode, &sql_mode_str);
-  switch_sql_mode(query, sql_mode_str.str);
-}
-
-
-void provisioning_send_info::switch_sql_mode(DYNAMIC_STRING *query,
-                                             char const *sql_mode)
-{
-  dynstr_append(query, "SET @saved_sql_mode = @@sql_mode;\n");
-  dynstr_append(query, "SET sql_mode = '");
-  dynstr_append(query, sql_mode);
-  dynstr_append(query, "';\n");
-}
-
-
-void provisioning_send_info::restore_sql_mode(DYNAMIC_STRING *query)
-{
-  dynstr_append(query, "SET sql_mode = @saved_sql_mode;\n");
-}
-
-/*
-  FIXME - Farnham
-  Collation and charset changing end
-*/
 
 /**
   Builds list of databases and stores it in <code>databases</code> list
@@ -885,13 +781,11 @@ bool provisioning_send_info::send_table_triggers()
   List_iterator_fast<ulonglong> it_sql_mode(triggers->definition_modes_list);
   LEX_STRING *definition, *db_cl_name, *client_cs_name, *connection_cl_name;
   ulonglong *sql_mode;
-  DYNAMIC_STRING query;
 
-  CHARSET_INFO* original_db_cl= get_default_db_collation(thd, database->str);
+  provisioning_cs_info cs_info;
 
   while ((definition= (LEX_STRING*)it_sql_orig_stmt.next_fast()) != NULL)
   {
-    int db_cl_altered= 0;
     db_cl_name= (LEX_STRING*)it_db_cl_name.next_fast();
     client_cs_name= (LEX_STRING*)it_client_cs_name.next_fast();
     connection_cl_name = (LEX_STRING*)it_connection_cl_name.next_fast();
@@ -901,43 +795,19 @@ bool provisioning_send_info::send_table_triggers()
 
     sql_print_information("Found trigger\n%s", definition->str);
 
-    init_dynamic_string(&query, "", 0x100, 0);
+    cs_info.cl_connection= get_collation_number(connection_cl_name->str);
+    cs_info.cl_db= get_collation_number(db_cl_name->str);
+    
+    cs_info.cs_client = get_charset_number(client_cs_name->str, MY_CS_PRIMARY);
 
-    if (switch_db_collation(&query, database->str,
-      db_cl_name->str, original_db_cl, &db_cl_altered))
+    cs_info.sql_mode= (ulong)*sql_mode;
+
+    if (send_query_log_event(definition, false, database, &cs_info))
     {
       result= true;
       break;
     }
-
-    switch_cs_variables(&query,
-        client_cs_name->str,
-        connection_cl_name->str);
-
-    switch_sql_mode(&query, *sql_mode);
-
-    dynstr_append(&query, "DELIMITER ;;\n");
-    dynstr_append(&query, definition->str);
-    dynstr_append(&query, "\n;;\nDELIMITER ;\n");
-
-    restore_sql_mode(&query);
-    restore_cs_variables(&query);
-
-    if (db_cl_altered)
-      restore_db_collation(&query, database->str, original_db_cl);
-
-    if (send_query_log_event(&query, false, database))
-    {
-      result= true;
-      break;
-    }
-
-    dynstr_free(&query);
   }
-
-  // If error occurred, preform skipped cleanup
-  if (result)
-    dynstr_free(&query);
 
   close_tables();
   return result;
@@ -1107,41 +977,18 @@ bool provisioning_send_info::send_create_routines()
       List<Ed_row>& rows= *result;
       Ed_row *row= rows.head();
       Ed_column const *definition= row->get_column(2);
-      int db_cl_altered= 0;
+      provisioning_cs_info cs_info;
 
-      init_dynamic_string(&query, "", 0x100, 0);
+      cs_info.cl_connection = get_collation_number(row->get_column(4)->str);
+      cs_info.cl_db = get_collation_number(row->get_column(5)->str);
 
-      if (switch_db_collation(&query, database->str,
-        row->get_column(5)->str, original_db_cl,
-        &db_cl_altered))
-      {
-        dynstr_free(&query);
+      cs_info.cs_client = get_charset_number(row->get_column(3)->str, MY_CS_PRIMARY);
+
+      // FIXME - Farnham
+      cs_info.sql_mode= 0;//row->get_column(1)->str;
+
+      if (send_query_log_event(definition, false, database, &cs_info))
         return true;
-      }
-
-      switch_cs_variables(&query,
-                          row->get_column(3)->str,
-                          row->get_column(4)->str);
-
-      switch_sql_mode(&query, row->get_column(1)->str);
-
-      dynstr_append(&query, "DELIMITER ;;\n");
-      dynstr_append(&query, definition->str);
-      dynstr_append(&query, "\n;;\nDELIMITER ;\n");
-
-      restore_sql_mode(&query);
-      restore_cs_variables(&query);
-
-      if (db_cl_altered)
-        restore_db_collation(&query, database->str, original_db_cl);
-
-      if (send_query_log_event(&query, false, database))
-      {
-        dynstr_free(&query);
-        return true;
-      }
-
-      dynstr_free(&query);
     }
   }
 
