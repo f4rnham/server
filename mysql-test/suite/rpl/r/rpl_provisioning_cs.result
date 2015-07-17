@@ -1,0 +1,146 @@
+include/rpl_provisioning_init.inc
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+DROP DATABASE test;
+----- Creating objects
+
+RESET MASTER;
+USE `test`;
+CREATE PROCEDURE `test`.`px`()
+BEGIN
+SELECT CHARSET('a');
+END|
+CREATE FUNCTION `test`.`fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin)
+RETURNS TEXT CHARACTER SET latin1 COLLATE latin1_bin
+BEGIN
+SET @param_coll = COLLATION(`str`);
+RETURN `str`;
+END|
+SET @@local.character_set_connection= 'utf8';
+SET @@local.character_set_client= 'utf8';
+ALTER DATABASE test CHARACTER SET utf8 COLLATE utf8_general_ci;
+CREATE PROCEDURE `test`.`py`()
+BEGIN
+SELECT CHARSET('a');
+END|
+CREATE FUNCTION `test`.`fy`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin)
+RETURNS TEXT CHARACTER SET latin1 COLLATE latin1_bin
+BEGIN
+SET @param_coll = COLLATION(`str`);
+RETURN `str`;
+END|
+----- Show create statements from master
+
+*************************** 1. row ***************************
+           Procedure: px
+            sql_mode: 
+    Create Procedure: CREATE DEFINER=`root`@`localhost` PROCEDURE `px`()
+BEGIN
+SELECT CHARSET('a');
+END
+character_set_client: latin1
+collation_connection: latin1_swedish_ci
+  Database Collation: latin1_swedish_ci
+*************************** 1. row ***************************
+           Procedure: py
+            sql_mode: 
+    Create Procedure: CREATE DEFINER=`root`@`localhost` PROCEDURE `py`()
+BEGIN
+SELECT CHARSET('a');
+END
+character_set_client: utf8
+collation_connection: utf8_general_ci
+  Database Collation: utf8_general_ci
+*************************** 1. row ***************************
+            Function: fx
+            sql_mode: 
+     Create Function: CREATE DEFINER=`root`@`localhost` FUNCTION `fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
+BEGIN
+SET @param_coll = COLLATION(`str`);
+RETURN `str`;
+END
+character_set_client: latin1
+collation_connection: latin1_swedish_ci
+  Database Collation: latin1_swedish_ci
+*************************** 1. row ***************************
+            Function: fy
+            sql_mode: 
+     Create Function: CREATE DEFINER=`root`@`localhost` FUNCTION `fy`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
+BEGIN
+SET @param_coll = COLLATION(`str`);
+RETURN `str`;
+END
+character_set_client: utf8
+collation_connection: utf8_general_ci
+  Database Collation: utf8_general_ci
+----- Start provisioning
+
+LOAD DATA FROM MASTER;
+include/wait_for_slave_sql_to_stop.inc
+----- Show create statements from slave
+
+*************************** 1. row ***************************
+           Procedure: px
+            sql_mode: 
+    Create Procedure: CREATE DEFINER=`root`@`localhost` PROCEDURE `px`()
+BEGIN
+SELECT CHARSET('a');
+END
+character_set_client: latin1
+collation_connection: latin1_swedish_ci
+  Database Collation: latin1_swedish_ci
+*************************** 1. row ***************************
+           Procedure: py
+            sql_mode: 
+    Create Procedure: CREATE DEFINER=`root`@`localhost` PROCEDURE `py`()
+BEGIN
+SELECT CHARSET('a');
+END
+character_set_client: utf8
+collation_connection: utf8_general_ci
+  Database Collation: utf8_general_ci
+*************************** 1. row ***************************
+            Function: fx
+            sql_mode: 
+     Create Function: CREATE DEFINER=`root`@`localhost` FUNCTION `fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
+BEGIN
+SET @param_coll = COLLATION(`str`);
+RETURN `str`;
+END
+character_set_client: latin1
+collation_connection: latin1_swedish_ci
+  Database Collation: latin1_swedish_ci
+*************************** 1. row ***************************
+            Function: fy
+            sql_mode: 
+     Create Function: CREATE DEFINER=`root`@`localhost` FUNCTION `fy`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
+BEGIN
+SET @param_coll = COLLATION(`str`);
+RETURN `str`;
+END
+character_set_client: utf8
+collation_connection: utf8_general_ci
+  Database Collation: utf8_general_ci
+CALL `test`.`px`();
+CHARSET('a')
+latin1
+CALL `test`.`py`();
+CHARSET('a')
+utf8
+----- Cleanup
+
+DROP PROCEDURE `test`.`px`;
+DROP PROCEDURE `test`.`py`;
+DROP FUNCTION `test`.`fx`;
+DROP FUNCTION `test`.`fy`;
+ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
+SET GLOBAL debug_dbug="";
+DROP PROCEDURE `test`.`px`;
+DROP PROCEDURE `test`.`py`;
+DROP FUNCTION `test`.`fx`;
+DROP FUNCTION `test`.`fy`;
+ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
+SET GLOBAL debug_dbug="";
+include/rpl_end.inc

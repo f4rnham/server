@@ -4,53 +4,89 @@
 
 --source include/rpl_provisioning_init.inc
 
-# Create databases and tables on master + fill them with data
+--echo ----- Creating objects
+--echo
 --connection master
 RESET MASTER;
 
 USE `test`;
-SET @@local.character_set_connection='latin1';
 
-DELIMITER ;;
-CREATE PROCEDURE `test`.`x`()
+DELIMITER |;
+CREATE PROCEDURE `test`.`px`()
 BEGIN
-	SELECT CHARSET('x');
-END;
-;;
-DELIMITER ;
+	SELECT CHARSET('a');
+END|
 
-SET @@local.character_set_connection='utf8';
-
-DELIMITER ;;
-CREATE PROCEDURE `test`.`y`()
+CREATE FUNCTION `test`.`fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin)
+	RETURNS TEXT CHARACTER SET latin1 COLLATE latin1_bin
 BEGIN
-	SELECT CHARSET('y');
-END;
-;;
-DELIMITER ;
+	SET @param_coll = COLLATION(`str`);
+	RETURN `str`;
+END|
+DELIMITER ;|
 
+SET @@local.character_set_connection= 'utf8';
+SET @@local.character_set_client= 'utf8';
+ALTER DATABASE test CHARACTER SET utf8 COLLATE utf8_general_ci;
 
-# Start provisioning
+DELIMITER |;
+
+CREATE PROCEDURE `test`.`py`()
+BEGIN
+	SELECT CHARSET('a');
+END|
+
+CREATE FUNCTION `test`.`fy`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin)
+	RETURNS TEXT CHARACTER SET latin1 COLLATE latin1_bin
+BEGIN
+	SET @param_coll = COLLATION(`str`);
+	RETURN `str`;
+END|
+
+DELIMITER ;|
+
+--echo ----- Show create statements from master
+--echo
+--exec $MYSQL test -e "SHOW CREATE PROCEDURE `test`.`px` \G"
+--exec $MYSQL test -e "SHOW CREATE PROCEDURE `test`.`py` \G"
+--exec $MYSQL test -e "SHOW CREATE FUNCTION `test`.`fx` \G"
+--exec $MYSQL test -e "SHOW CREATE FUNCTION `test`.`fy` \G"
+
+--echo ----- Start provisioning
+--echo
 --connection slave
 LOAD DATA FROM MASTER;
 
 # Provisioning is completed after sql thread was shut down
 --source include/wait_for_slave_sql_to_stop.inc
 
-# Check if objects were transferred
-CALL `test`.`x`();
-CALL `test`.`y`();
+
+--echo ----- Show create statements from slave
+--echo
+--exec $MYSQL test -e "SHOW CREATE PROCEDURE `test`.`px` \G"
+--exec $MYSQL test -e "SHOW CREATE PROCEDURE `test`.`py` \G"
+--exec $MYSQL test -e "SHOW CREATE FUNCTION `test`.`fx` \G"
+--exec $MYSQL test -e "SHOW CREATE FUNCTION `test`.`fy` \G"
+CALL `test`.`px`();
+CALL `test`.`py`();
 
 
-# Cleanup
+--echo ----- Cleanup
+--echo
 --connection master
-DROP PROCEDURE `test`.`x`;
-DROP PROCEDURE `test`.`y`;
+DROP PROCEDURE `test`.`px`;
+DROP PROCEDURE `test`.`py`;
+DROP FUNCTION `test`.`fx`;
+DROP FUNCTION `test`.`fy`;
+ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
 SET GLOBAL debug_dbug="";
 
 --connection slave
-DROP PROCEDURE `test`.`x`;
-DROP PROCEDURE `test`.`y`;
+DROP PROCEDURE `test`.`px`;
+DROP PROCEDURE `test`.`py`;
+DROP FUNCTION `test`.`fx`;
+DROP FUNCTION `test`.`fy`;
+ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
 SET GLOBAL debug_dbug="";
 
 --let $rpl_only_running_threads= 1
