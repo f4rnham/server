@@ -53,7 +53,7 @@ BEGIN
 	RETURN `str`;
 END|
 
-CREATE TRIGGER trg1 BEFORE INSERT ON t1 FOR EACH ROW
+CREATE TRIGGER trg2 BEFORE UPDATE ON t1 FOR EACH ROW
 BEGIN
   SET NEW.a = NEW.a * 2;
 END|
@@ -67,6 +67,8 @@ DELIMITER ;|
 --exec $MYSQL test -e "SHOW CREATE PROCEDURE `test`.`py` \G"
 --exec $MYSQL test -e "SHOW CREATE FUNCTION `test`.`fx` \G"
 --exec $MYSQL test -e "SHOW CREATE FUNCTION `test`.`fy` \G"
+--exec $MYSQL test -e "SHOW CREATE TRIGGER `test`.`trg1` \G"
+--exec $MYSQL test -e "SHOW CREATE TRIGGER `test`.`trg2` \G"
 
 --echo
 --echo ----- Start provisioning
@@ -84,6 +86,8 @@ LOAD DATA FROM MASTER;
 --exec $MYSQL test -e "SHOW CREATE PROCEDURE `test`.`py` \G"
 --exec $MYSQL test -e "SHOW CREATE FUNCTION `test`.`fx` \G"
 --exec $MYSQL test -e "SHOW CREATE FUNCTION `test`.`fy` \G"
+--exec $MYSQL test -e "SHOW CREATE TRIGGER `test`.`trg1` \G"
+--exec $MYSQL test -e "SHOW CREATE TRIGGER `test`.`trg2` \G"
 CALL `test`.`px`();
 CALL `test`.`py`();
 
@@ -96,7 +100,7 @@ DROP PROCEDURE `test`.`py`;
 DROP FUNCTION `test`.`fx`;
 DROP FUNCTION `test`.`fy`;
 ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
-DROP TABLE t1;
+DROP TABLE `test`.`t1`;
 SET GLOBAL debug_dbug="";
 
 --connection slave
@@ -105,7 +109,7 @@ DROP PROCEDURE `test`.`py`;
 DROP FUNCTION `test`.`fx`;
 DROP FUNCTION `test`.`fy`;
 ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
-DROP TABLE t1;
+DROP TABLE `test`.`t1`;
 SET GLOBAL debug_dbug="";
 
 --let $rpl_only_running_threads= 1
