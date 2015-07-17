@@ -1,10 +1,5 @@
 // FIXME - Farnham
 // Header
-// Character sets, collations
-//  documentation, formatting, tests
-//  triggers - done
-//  events
-//  routines
 
 #include "rpl_provisioning.h"
 #include "log_event.h"
@@ -159,28 +154,59 @@ void provisioning_send_info::close_tables()
   thd->mdl_context.release_transactional_locks();
 }
 
-bool provisioning_send_info::send_query_log_event(
-  DYNAMIC_STRING const *query,
-  bool suppress_use,
-  LEX_STRING const *database,
-  provisioning_cs_info *cs_info)
-{
-  return send_query_log_event(query->str, query->length, suppress_use, database, cs_info);
-}
+/**
+  Create query log event from provided query and send it to slave
 
-bool provisioning_send_info::send_query_log_event(
-  LEX_STRING const *query,
-  bool suppress_use,
-  LEX_STRING const *database,
-  provisioning_cs_info *cs_info)
+  @param query        Query
+  @param suppress_use Suppress 'USE' statement, if false, function temporarily
+                      switches thread database
+  @param database     Database in which query has to be executed, not null
+                      only if suppress_use == false
+  @param cs_info      If not NULL, information about required character set
+                      settings
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::send_query_log_event(DYNAMIC_STRING const *query,
+                                                  bool suppress_use,
+                                                  LEX_STRING const *database,
+                                                  provisioning_cs_info *cs_info)
 {
-  return send_query_log_event(query->str, query->length, suppress_use, database, cs_info);
+  return send_query_log_event(query->str, query->length, suppress_use,
+    database, cs_info);
 }
 
 /**
   Create query log event from provided query and send it to slave
 
   @param query        Query
+  @param suppress_use Suppress 'USE' statement, if false, function temporarily
+                      switches thread database
+  @param database     Database in which query has to be executed, not null
+                      only if suppress_use == false
+  @param cs_info      If not NULL, information about required character set
+                      settings
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::send_query_log_event(LEX_STRING const *query,
+                                                  bool suppress_use,
+                                                  LEX_STRING const *database,
+                                                  provisioning_cs_info *cs_info)
+{
+  return send_query_log_event(query->str, query->length, suppress_use,
+    database, cs_info);
+}
+
+/**
+  Create query log event from provided query and send it to slave
+
+  @param query        Query
+  @param query_length Length of <code>query</code> string parameter
   @param suppress_use Suppress 'USE' statement, if false, function temporarily
                       switches thread database
   @param database     Database in which query has to be executed, not null
@@ -217,13 +243,17 @@ bool provisioning_send_info::send_query_log_event(char const *query,
 
   if (cs_info)
   {
-    int2store(evt.charset, cs_info->cs_client); // thd_arg->variables.character_set_client->number
-    int2store(evt.charset + 2, cs_info->cl_connection); // thd_arg->variables.collation_connection->number
-    int2store(evt.charset + 4, /*cs_info->cl_server*/ thd->variables.collation_server->number);
-    evt.charset_database_number = cs_info->cl_db; // thd_arg->variables.collation_database->number
+    // thd->variables.character_set_client->number
+    int2store(evt.charset, cs_info->cs_client);
+    // thd->variables.collation_connection->number
+    int2store(evt.charset + 2, cs_info->cl_connection);
+    // cs_info->cl_server
+    int2store(evt.charset + 4, thd->variables.collation_server->number);
+    // thd->variables.collation_database->number
+    evt.charset_database_number= cs_info->cl_db;
 
-    evt.sql_mode_inited = 1;
-    evt.sql_mode = cs_info->sql_mode;
+    evt.sql_mode_inited= 1;
+    evt.sql_mode= cs_info->sql_mode;
   }
 
   bool res= false;
@@ -788,7 +818,7 @@ bool provisioning_send_info::send_table_triggers()
   {
     db_cl_name= (LEX_STRING*)it_db_cl_name.next_fast();
     client_cs_name= (LEX_STRING*)it_client_cs_name.next_fast();
-    connection_cl_name = (LEX_STRING*)it_connection_cl_name.next_fast();
+    connection_cl_name= (LEX_STRING*)it_connection_cl_name.next_fast();
     sql_mode= (ulonglong*)it_sql_mode.next_fast();
 
     DBUG_ASSERT(db_cl_name && client_cs_name && connection_cl_name && sql_mode);
@@ -798,7 +828,7 @@ bool provisioning_send_info::send_table_triggers()
     cs_info.cl_connection= get_collation_number(connection_cl_name->str);
     cs_info.cl_db= get_collation_number(db_cl_name->str);
     
-    cs_info.cs_client = get_charset_number(client_cs_name->str, MY_CS_PRIMARY);
+    cs_info.cs_client= get_charset_number(client_cs_name->str, MY_CS_PRIMARY);
 
     cs_info.sql_mode= (ulong)*sql_mode;
 
@@ -885,8 +915,6 @@ bool provisioning_send_info::send_create_routines()
   escape_quotes_for_mysql(system_charset_info,
                           db_name_buff_escaped, sizeof(db_name_buff_escaped),
                           database->str, database->length);
-
-  CHARSET_INFO* original_db_cl = get_default_db_collation(thd, database->str);
 
   for (uint8 i= 0; i <= 1; ++i)
   {
@@ -979,10 +1007,10 @@ bool provisioning_send_info::send_create_routines()
       Ed_column const *definition= row->get_column(2);
       provisioning_cs_info cs_info;
 
-      cs_info.cl_connection = get_collation_number(row->get_column(4)->str);
-      cs_info.cl_db = get_collation_number(row->get_column(5)->str);
+      cs_info.cl_connection= get_collation_number(row->get_column(4)->str);
+      cs_info.cl_db= get_collation_number(row->get_column(5)->str);
 
-      cs_info.cs_client = get_charset_number(row->get_column(3)->str, MY_CS_PRIMARY);
+      cs_info.cs_client= get_charset_number(row->get_column(3)->str, MY_CS_PRIMARY);
 
       // FIXME - Farnham
       cs_info.sql_mode= 0;//row->get_column(1)->str;
