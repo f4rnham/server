@@ -8,6 +8,8 @@
 #include "key.h"
 #include "sql_db.h"
 #include "set_var.h"
+#include "sp.h"
+#include "sp_head.h"
 
 /*
   Quotes a string using backticks
@@ -907,6 +909,8 @@ bool provisioning_send_info::send_create_routines()
 
   LEX_STRING const *database= databases.head();
   char const *routine_type[]= { "FUNCTION", "PROCEDURE" };
+  stored_procedure_type routine_enum_type[]= { TYPE_ENUM_FUNCTION,
+    TYPE_ENUM_PROCEDURE };
   char name_buff[NAME_LEN * 2 + 3];
   char db_name_buff[NAME_LEN * 2 + 3];
   char db_name_buff_escaped[NAME_LEN * 2 + 3];
@@ -919,103 +923,67 @@ bool provisioning_send_info::send_create_routines()
   for (uint8 i= 0; i <= 1; ++i)
   {
     DYNAMIC_STRING query;
-    List<char> routines;
 
-    // Fetch function / procedure names
+    init_dynamic_string(&query, "SHOW ", 0, 0);
+
+    dynstr_append(&query, routine_type[i]);
+    dynstr_append(&query, " STATUS WHERE Db = '");
+    dynstr_append(&query, db_name_buff_escaped);
+    dynstr_append(&query, "'");
+
+    if (connection->execute_direct({ query.str, query.length }))
     {
-      init_dynamic_string(&query, "SHOW ", 0, 0);
-
-      dynstr_append(&query, routine_type[i]);
-      dynstr_append(&query, " STATUS WHERE Db = '");
-      dynstr_append(&query, db_name_buff_escaped);
-      dynstr_append(&query, "'");
-
-      if (connection->execute_direct({ query.str, query.length }))
-      {
-        record_ed_connection_error("Failed to query existing routines");
-        dynstr_free(&query);
-        return true;
-      }
-
+      record_ed_connection_error("Failed to query existing routines");
       dynstr_free(&query);
-      Ed_result_set *result= connection->use_result_set();
-
-      // We are expecting exactly one result set with 11 columns,
-      // in any other case, something went wrong
-      if (!result || result->get_field_count() != 11 ||
-          connection->has_next_result())
-      {
-        error_text= "Failed to read list of routines";
-        return true;
-      }
-
-      List<Ed_row>& rows= *result;
-      List_iterator_fast<Ed_row> it(rows);
-
-      for (uint32 j= 0; j < rows.elements; ++j)
-      {
-        Ed_row *row= it++;
-
-        // Field count for entire result set was already checked, recheck
-        // in case of internal inconsistency
-        DBUG_ASSERT(row->size() == 11);
-
-        Ed_column const *name= row->get_column(1);
-
-        sql_print_information("Discovered %s: %s", routine_type[i], name->str);
-        routines.push_back(my_strdup(name->str, MYF(0)));
-      }
+      return true;
     }
 
-    // Fetch function / procedure definitions and send them to slave
-    while (!routines.is_empty())
+    dynstr_free(&query);
+    Ed_result_set *result= connection->use_result_set();
+
+    // We are expecting exactly one result set with 11 columns,
+    // in any other case, something went wrong
+    if (!result || result->get_field_count() != 11 ||
+        connection->has_next_result())
     {
-      char *name= routines.pop();
+      error_text= "Failed to read list of routines";
+      return true;
+    }
 
-      quote_name(name, name_buff);
-      my_free(name);
-      name= NULL;
+    List<Ed_row>& rows= *result;
+    List_iterator_fast<Ed_row> it(rows);
 
-      init_dynamic_string(&query, "SHOW CREATE ", 0, 0);
-      dynstr_append(&query, routine_type[i]);
-      dynstr_append(&query, " ");
-      dynstr_append(&query, db_name_buff);
-      dynstr_append(&query, ".");
-      dynstr_append(&query, name_buff);
+    for (uint32 j= 0; j < rows.elements; ++j)
+    {
+      Ed_row *row= it++;
 
-      if (connection->execute_direct({ query.str, query.length }))
+      // Field count for entire result set was already checked, recheck
+      // in case of internal inconsistency
+      DBUG_ASSERT(row->size() == 11);
+
+      LEX_STRING const *name= row->get_column(1);
+
+      sql_print_information("Discovered %s: %s", routine_type[i], name->str);
+      
+      sp_head *sp;
+      sp_name spname(*database, *name, true);
+      spname.init_qname(thd);
+
+      if (sp_cache_routine(thd, routine_enum_type[i], &spname, FALSE, &sp))
       {
-        record_ed_connection_error("Failed to query routine definition");
-        dynstr_free(&query);
+        error_text= "Failed to retrieve routine data";
         return true;
       }
 
-      dynstr_free(&query);
-      Ed_result_set *result= connection->use_result_set();
-
-      // We are expecting exactly one result set with one row and 6 columns,
-      // in any other case, something went wrong
-      if (!result || result->size() != 1 || result->get_field_count() != 6 ||
-          connection->has_next_result())
-      {
-        error_text= "Failed to read definition of routine";
-        return true;
-      }
-
-      List<Ed_row>& rows= *result;
-      Ed_row *row= rows.head();
-      Ed_column const *definition= row->get_column(2);
       provisioning_cs_info cs_info;
+      cs_info.cl_connection= sp->get_creation_ctx()->get_connection_cl()->number;
+      cs_info.cl_db= sp->get_creation_ctx()->get_db_cl()->number;
 
-      cs_info.cl_connection= get_collation_number(row->get_column(4)->str);
-      cs_info.cl_db= get_collation_number(row->get_column(5)->str);
+      cs_info.cs_client= sp->get_creation_ctx()->get_client_cs()->number;
 
-      cs_info.cs_client= get_charset_number(row->get_column(3)->str, MY_CS_PRIMARY);
+      cs_info.sql_mode= sp->m_sql_mode;
 
-      // FIXME - Farnham
-      cs_info.sql_mode= 0;//row->get_column(1)->str;
-
-      if (send_query_log_event(definition, false, database, &cs_info))
+      if (send_query_log_event(&sp->m_defstr, false, database, &cs_info))
         return true;
     }
   }
