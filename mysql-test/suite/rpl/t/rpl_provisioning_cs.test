@@ -1,6 +1,6 @@
 # Generic / temporary test for MDEV-7502 Automatic provisioning of slave
 # Tested functionality of LOAD DATA FROM MASTER - provisioning of objects
-# with special character sets and collations
+# with special character sets, collations and sql modes
 
 --source include/rpl_provisioning_init.inc
 
@@ -38,6 +38,7 @@ DELIMITER ;|
 SET @@local.character_set_connection= 'utf8';
 SET @@local.character_set_client= 'utf8';
 ALTER DATABASE test CHARACTER SET utf8 COLLATE utf8_general_ci;
+SET sql_mode= 'ANSI_QUOTES';
 
 DELIMITER |;
 
