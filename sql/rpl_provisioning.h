@@ -95,7 +95,7 @@ struct provisioning_cs_info
   uint32 cl_connection;
   uint32 cl_server; // UNUSED
   uint32 cl_db;
-  ulong sql_mode;
+  ulonglong sql_mode;
 };
 
 /*

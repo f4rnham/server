@@ -8,9 +8,9 @@ RESET MASTER;
 CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_` (`_@_*_$_'_ _\t_\x_"_``_` int, PRIMARY KEY (`_@_*_$_'_ _\t_\x_"_``_`));
 INSERT INTO test.`_@_*_$_'_ _\t_\x_"_``_` VALUES (1), (2), (3), (4), (5);
 CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
-CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`SELECT` (`WHERE` int, PRIMARY KEY (`WHERE`));
-INSERT INTO `_@_*_$_'_ _\t_\x_"_``_`.`SELECT` VALUES (1), (2), (3), (4), (5);
-CREATE DATABASE `SELECT`;
+CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`select` (`where` int, PRIMARY KEY (`WHERE`));
+INSERT INTO `_@_*_$_'_ _\t_\x_"_``_`.`select` VALUES (1), (2), (3), (4), (5);
+CREATE DATABASE `select`;
 LOAD DATA FROM MASTER;
 include/wait_for_slave_sql_to_stop.inc
 SHOW CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
@@ -22,15 +22,15 @@ _@_*_$_'_ _\t_\x_"_`_	CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_` (
 SHOW CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
 Database	Create Database
 _@_*_$_'_ _\t_\x_"_`_	CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_` /*!40100 DEFAULT CHARACTER SET latin1 */
-SHOW CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`SELECT`;
+SHOW CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`select`;
 Table	Create Table
-SELECT	CREATE TABLE `select` (
-  `WHERE` int(11) NOT NULL DEFAULT '0',
-  PRIMARY KEY (`WHERE`)
+select	CREATE TABLE `select` (
+  `where` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`where`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
-SHOW CREATE DATABASE `SELECT`;
+SHOW CREATE DATABASE `select`;
 Database	Create Database
-SELECT	CREATE DATABASE `select` /*!40100 DEFAULT CHARACTER SET latin1 */
+select	CREATE DATABASE `select` /*!40100 DEFAULT CHARACTER SET latin1 */
 SELECT * FROM test.`_@_*_$_'_ _\t_\x_"_``_`;
 _@_*_$_'_ _\t_\x_"_`_
 1
@@ -38,8 +38,8 @@ _@_*_$_'_ _\t_\x_"_`_
 3
 4
 5
-SELECT * FROM `_@_*_$_'_ _\t_\x_"_``_`.`SELECT`;
-WHERE
+SELECT * FROM `_@_*_$_'_ _\t_\x_"_``_`.`select`;
+where
 1
 2
 3
@@ -47,10 +47,10 @@ WHERE
 5
 DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
-DROP DATABASE `SELECT`;
+DROP DATABASE `select`;
 SET GLOBAL debug_dbug="";
 DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
-DROP DATABASE `SELECT`;
+DROP DATABASE `select`;
 SET GLOBAL debug_dbug="";
 include/rpl_end.inc

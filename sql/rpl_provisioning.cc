@@ -555,9 +555,12 @@ bool provisioning_send_info::send_create_database()
 
   if (connection->execute_direct({ query.str, query.length }))
   {
+    dynstr_free(&query);
     record_ed_connection_error("Failed to retrieve database structure");
     return true;
   }
+
+  dynstr_free(&query);
 
   Ed_result_set *result= connection->use_result_set();
 
@@ -610,9 +613,12 @@ bool provisioning_send_info::send_create_table()
 
   if (connection->execute_direct({ query.str, query.length }))
   {
+    dynstr_free(&query);
     record_ed_connection_error("Failed to retrieve table structure");
     return true;
   }
+
+  dynstr_free(&query);
 
   Ed_result_set *result= connection->use_result_set();
 
@@ -832,7 +838,7 @@ bool provisioning_send_info::send_table_triggers()
     
     cs_info.cs_client= get_charset_number(client_cs_name->str, MY_CS_PRIMARY);
 
-    cs_info.sql_mode= (ulong)*sql_mode;
+    cs_info.sql_mode= *sql_mode;
 
     if (send_query_log_event(definition, false, database, &cs_info))
     {
@@ -865,9 +871,12 @@ bool provisioning_send_info::send_create_view()
 
   if (connection->execute_direct({ query.str, query.length }))
   {
+    dynstr_free(&query);
     record_ed_connection_error("Failed to retrieve view structure");
     return true;
   }
+
+  dynstr_free(&query);
 
   Ed_result_set *result= connection->use_result_set();
 
@@ -911,7 +920,6 @@ bool provisioning_send_info::send_create_routines()
   char const *routine_type[]= { "FUNCTION", "PROCEDURE" };
   stored_procedure_type routine_enum_type[]= { TYPE_ENUM_FUNCTION,
     TYPE_ENUM_PROCEDURE };
-  char name_buff[NAME_LEN * 2 + 3];
   char db_name_buff[NAME_LEN * 2 + 3];
   char db_name_buff_escaped[NAME_LEN * 2 + 3];
 

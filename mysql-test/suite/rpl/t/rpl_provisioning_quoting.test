@@ -12,10 +12,10 @@ CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_` (`_@_*_$_'_ _\t_\x_"_``_` int, PRIMAR
 INSERT INTO test.`_@_*_$_'_ _\t_\x_"_``_` VALUES (1), (2), (3), (4), (5);
 
 CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
-CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`SELECT` (`WHERE` int, PRIMARY KEY (`WHERE`));
-INSERT INTO `_@_*_$_'_ _\t_\x_"_``_`.`SELECT` VALUES (1), (2), (3), (4), (5);
+CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`select` (`where` int, PRIMARY KEY (`WHERE`));
+INSERT INTO `_@_*_$_'_ _\t_\x_"_``_`.`select` VALUES (1), (2), (3), (4), (5);
 
-CREATE DATABASE `SELECT`;
+CREATE DATABASE `select`;
 
 # Start provisioning
 --connection slave
@@ -27,24 +27,24 @@ LOAD DATA FROM MASTER;
 # Check if database and table structures were transferred
 SHOW CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 SHOW CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
-SHOW CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`SELECT`;
-SHOW CREATE DATABASE `SELECT`;
+SHOW CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`select`;
+SHOW CREATE DATABASE `select`;
 
 # Check if row data were transferred
 SELECT * FROM test.`_@_*_$_'_ _\t_\x_"_``_`;
-SELECT * FROM `_@_*_$_'_ _\t_\x_"_``_`.`SELECT`;
+SELECT * FROM `_@_*_$_'_ _\t_\x_"_``_`.`select`;
 
 # Cleanup
 --connection master
 DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
-DROP DATABASE `SELECT`;
+DROP DATABASE `select`;
 SET GLOBAL debug_dbug="";
 
 --connection slave
 DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
-DROP DATABASE `SELECT`;
+DROP DATABASE `select`;
 SET GLOBAL debug_dbug="";
 
 --let $rpl_only_running_threads= 1
