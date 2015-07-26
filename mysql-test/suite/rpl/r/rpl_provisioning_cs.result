@@ -45,68 +45,68 @@ END|
 
 ----- Show create statements from master
 
-*************************** 1. row ***************************
-           Procedure: px
-            sql_mode: 
-    Create Procedure: CREATE DEFINER=`root`@`localhost` PROCEDURE `px`()
+SHOW CREATE PROCEDURE test.px;
+Procedure	px
+sql_mode	
+Create Procedure	CREATE DEFINER=`root`@`localhost` PROCEDURE `px`()
 BEGIN
 SELECT CHARSET('a');
 END
-character_set_client: latin1
-collation_connection: latin1_swedish_ci
-  Database Collation: latin1_swedish_ci
-*************************** 1. row ***************************
-           Procedure: py
-            sql_mode: ANSI_QUOTES
-    Create Procedure: CREATE DEFINER="root"@"localhost" PROCEDURE "py"()
+character_set_client	latin1
+collation_connection	latin1_swedish_ci
+Database Collation	latin1_swedish_ci
+SHOW CREATE PROCEDURE test.py;
+Procedure	py
+sql_mode	ANSI_QUOTES
+Create Procedure	CREATE DEFINER="root"@"localhost" PROCEDURE "py"()
 BEGIN
 SELECT CHARSET('a');
 END
-character_set_client: utf8
-collation_connection: utf8_general_ci
-  Database Collation: utf8_general_ci
-*************************** 1. row ***************************
-            Function: fx
-            sql_mode: 
-     Create Function: CREATE DEFINER=`root`@`localhost` FUNCTION `fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
+character_set_client	utf8
+collation_connection	utf8_general_ci
+Database Collation	utf8_general_ci
+SHOW CREATE FUNCTION test.fx;
+Function	fx
+sql_mode	
+Create Function	CREATE DEFINER=`root`@`localhost` FUNCTION `fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
 BEGIN
 SET @param_coll = COLLATION(`str`);
 RETURN `str`;
 END
-character_set_client: latin1
-collation_connection: latin1_swedish_ci
-  Database Collation: latin1_swedish_ci
-*************************** 1. row ***************************
-            Function: fy
-            sql_mode: ANSI_QUOTES
-     Create Function: CREATE DEFINER="root"@"localhost" FUNCTION "fy"(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
+character_set_client	latin1
+collation_connection	latin1_swedish_ci
+Database Collation	latin1_swedish_ci
+SHOW CREATE FUNCTION test.fy;
+Function	fy
+sql_mode	ANSI_QUOTES
+Create Function	CREATE DEFINER="root"@"localhost" FUNCTION "fy"(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
 BEGIN
 SET @param_coll = COLLATION(`str`);
 RETURN `str`;
 END
-character_set_client: utf8
-collation_connection: utf8_general_ci
-  Database Collation: utf8_general_ci
-*************************** 1. row ***************************
-               Trigger: trg1
-              sql_mode: 
-SQL Original Statement: CREATE DEFINER=`root`@`localhost` TRIGGER trg1 BEFORE INSERT ON t1 FOR EACH ROW
+character_set_client	utf8
+collation_connection	utf8_general_ci
+Database Collation	utf8_general_ci
+SHOW CREATE TRIGGER test.trg1;
+Trigger	trg1
+sql_mode	
+SQL Original Statement	CREATE DEFINER=`root`@`localhost` TRIGGER trg1 BEFORE INSERT ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END
-  character_set_client: latin1
-  collation_connection: latin1_swedish_ci
-    Database Collation: latin1_swedish_ci
-*************************** 1. row ***************************
-               Trigger: trg2
-              sql_mode: ANSI_QUOTES
-SQL Original Statement: CREATE DEFINER="root"@"localhost" TRIGGER trg2 BEFORE UPDATE ON t1 FOR EACH ROW
+character_set_client	latin1
+collation_connection	latin1_swedish_ci
+Database Collation	latin1_swedish_ci
+SHOW CREATE TRIGGER test.trg2;
+Trigger	trg2
+sql_mode	ANSI_QUOTES
+SQL Original Statement	CREATE DEFINER="root"@"localhost" TRIGGER trg2 BEFORE UPDATE ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END
-  character_set_client: utf8
-  collation_connection: utf8_general_ci
-    Database Collation: utf8_general_ci
+character_set_client	utf8
+collation_connection	utf8_general_ci
+Database Collation	utf8_general_ci
 
 ----- Start provisioning
 
@@ -115,68 +115,68 @@ include/wait_for_slave_sql_to_stop.inc
 
 ----- Show create statements from slave
 
-*************************** 1. row ***************************
-           Procedure: px
-            sql_mode: 
-    Create Procedure: CREATE DEFINER=`root`@`localhost` PROCEDURE `px`()
+SHOW CREATE PROCEDURE test.px;
+Procedure	px
+sql_mode	
+Create Procedure	CREATE DEFINER=`root`@`localhost` PROCEDURE `px`()
 BEGIN
 SELECT CHARSET('a');
 END
-character_set_client: latin1
-collation_connection: latin1_swedish_ci
-  Database Collation: latin1_swedish_ci
-*************************** 1. row ***************************
-           Procedure: py
-            sql_mode: ANSI_QUOTES
-    Create Procedure: CREATE DEFINER="root"@"localhost" PROCEDURE "py"()
+character_set_client	latin1
+collation_connection	latin1_swedish_ci
+Database Collation	utf8_general_ci
+SHOW CREATE PROCEDURE test.py;
+Procedure	py
+sql_mode	ANSI_QUOTES
+Create Procedure	CREATE DEFINER="root"@"localhost" PROCEDURE "py"()
 BEGIN
 SELECT CHARSET('a');
 END
-character_set_client: utf8
-collation_connection: utf8_general_ci
-  Database Collation: utf8_general_ci
-*************************** 1. row ***************************
-            Function: fx
-            sql_mode: 
-     Create Function: CREATE DEFINER=`root`@`localhost` FUNCTION `fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
+character_set_client	utf8
+collation_connection	utf8_general_ci
+Database Collation	utf8_general_ci
+SHOW CREATE FUNCTION test.fx;
+Function	fx
+sql_mode	
+Create Function	CREATE DEFINER=`root`@`localhost` FUNCTION `fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
 BEGIN
 SET @param_coll = COLLATION(`str`);
 RETURN `str`;
 END
-character_set_client: latin1
-collation_connection: latin1_swedish_ci
-  Database Collation: latin1_swedish_ci
-*************************** 1. row ***************************
-            Function: fy
-            sql_mode: ANSI_QUOTES
-     Create Function: CREATE DEFINER="root"@"localhost" FUNCTION "fy"(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
+character_set_client	latin1
+collation_connection	latin1_swedish_ci
+Database Collation	utf8_general_ci
+SHOW CREATE FUNCTION test.fy;
+Function	fy
+sql_mode	ANSI_QUOTES
+Create Function	CREATE DEFINER="root"@"localhost" FUNCTION "fy"(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
 BEGIN
 SET @param_coll = COLLATION(`str`);
 RETURN `str`;
 END
-character_set_client: utf8
-collation_connection: utf8_general_ci
-  Database Collation: utf8_general_ci
-*************************** 1. row ***************************
-               Trigger: trg1
-              sql_mode: 
-SQL Original Statement: CREATE DEFINER=`root`@`localhost` TRIGGER trg1 BEFORE INSERT ON t1 FOR EACH ROW
+character_set_client	utf8
+collation_connection	utf8_general_ci
+Database Collation	utf8_general_ci
+SHOW CREATE TRIGGER test.trg1;
+Trigger	trg1
+sql_mode	
+SQL Original Statement	CREATE DEFINER=`root`@`localhost` TRIGGER trg1 BEFORE INSERT ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END
-  character_set_client: latin1
-  collation_connection: latin1_swedish_ci
-    Database Collation: latin1_swedish_ci
-*************************** 1. row ***************************
-               Trigger: trg2
-              sql_mode: ANSI_QUOTES
-SQL Original Statement: CREATE DEFINER="root"@"localhost" TRIGGER trg2 BEFORE UPDATE ON t1 FOR EACH ROW
+character_set_client	latin1
+collation_connection	latin1_swedish_ci
+Database Collation	utf8_general_ci
+SHOW CREATE TRIGGER test.trg2;
+Trigger	trg2
+sql_mode	ANSI_QUOTES
+SQL Original Statement	CREATE DEFINER="root"@"localhost" TRIGGER trg2 BEFORE UPDATE ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END
-  character_set_client: utf8
-  collation_connection: utf8_general_ci
-    Database Collation: utf8_general_ci
+character_set_client	utf8
+collation_connection	utf8_general_ci
+Database Collation	utf8_general_ci
 CALL `test`.`px`();
 CHARSET('a')
 latin1

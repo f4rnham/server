@@ -64,12 +64,12 @@ DELIMITER ;|
 --echo
 --echo ----- Show create statements from master
 --echo
---exec $MYSQL test -e "SHOW CREATE PROCEDURE test.px \G"
---exec $MYSQL test -e "SHOW CREATE PROCEDURE test.py \G"
---exec $MYSQL test -e "SHOW CREATE FUNCTION test.fx \G"
---exec $MYSQL test -e "SHOW CREATE FUNCTION test.fy \G"
---exec $MYSQL test -e "SHOW CREATE TRIGGER test.trg1 \G"
---exec $MYSQL test -e "SHOW CREATE TRIGGER test.trg2 \G"
+query_vertical SHOW CREATE PROCEDURE test.px;
+query_vertical SHOW CREATE PROCEDURE test.py;
+query_vertical SHOW CREATE FUNCTION test.fx;
+query_vertical SHOW CREATE FUNCTION test.fy;
+query_vertical SHOW CREATE TRIGGER test.trg1;
+query_vertical SHOW CREATE TRIGGER test.trg2;
 
 --echo
 --echo ----- Start provisioning
@@ -83,12 +83,12 @@ LOAD DATA FROM MASTER;
 --echo
 --echo ----- Show create statements from slave
 --echo
---exec $MYSQL test -e "SHOW CREATE PROCEDURE test.px \G"
---exec $MYSQL test -e "SHOW CREATE PROCEDURE test.py \G"
---exec $MYSQL test -e "SHOW CREATE FUNCTION test.fx \G"
---exec $MYSQL test -e "SHOW CREATE FUNCTION test.fy \G"
---exec $MYSQL test -e "SHOW CREATE TRIGGER test.trg1 \G"
---exec $MYSQL test -e "SHOW CREATE TRIGGER test.trg2 \G"
+query_vertical SHOW CREATE PROCEDURE test.px;
+query_vertical SHOW CREATE PROCEDURE test.py;
+query_vertical SHOW CREATE FUNCTION test.fx;
+query_vertical SHOW CREATE FUNCTION test.fy;
+query_vertical SHOW CREATE TRIGGER test.trg1;
+query_vertical SHOW CREATE TRIGGER test.trg2;
 CALL `test`.`px`();
 CALL `test`.`py`();
 
