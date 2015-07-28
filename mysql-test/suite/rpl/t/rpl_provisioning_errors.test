@@ -68,6 +68,42 @@ CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 # Cleanup after test case
 --connection slave
 SET GLOBAL debug_dbug="-d,FORCE_SLAVE_TO_RECONNECT_DUMP";
+# Creation of database `test` depends purely on timing and it has nothing to do with this test case
+--disable_warnings
+DROP DATABASE IF EXISTS test;
+--enable_warnings
+
+#
+# START SLAVE command during provisioning
+#
+--connection master
+SET GLOBAL debug_dbug="+d,provisioning_wait";
+
+--connection slave
+LOAD DATA FROM MASTER;
+
+# START SLAVE fails with error
+--error 1980
+START SLAVE;
+
+# Wait for provisioning to end
+--connection master
+SET GLOBAL debug_dbug="-d,provisioning_wait";
+
+# Now START SLAVE will succeed
+--connection slave
+--source include/wait_for_slave_sql_to_stop.inc
+START SLAVE;
+
+# Cleanup after test case
+--connection slave
+STOP SLAVE;
+RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+# Creation of database `test` depends purely on timing and it has nothing to do with this test case
+--disable_warnings
+DROP DATABASE IF EXISTS test;
+--enable_warnings
 
 #
 # Another test case

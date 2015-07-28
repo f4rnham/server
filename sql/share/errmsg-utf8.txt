@@ -7133,3 +7133,5 @@ ER_PROVISIONING_NOT_GTID
         eng "This operation cannot be performed as server is not configured to use GTID; run CHANGE MASTER TO MASTER_USE_GTID = {current_pos|slave_pos} first"
 ER_PROVISIONING_DISCONNECTED
         eng "Slave disconnected during provisioning, drop already provisioned databases from slave and try again"
+ER_PROVISIONING_RUNNING
+        eng "Provisioning is already running, run STOP SLAVE command to interrupt it"

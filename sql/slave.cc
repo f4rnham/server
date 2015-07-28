@@ -886,13 +886,15 @@ int start_slave_thread(
 */
 
 int start_slave_threads(bool need_slave_mutex, bool wait_for_start,
-                        Master_info* mi, int thread_mask)
+                        Master_info* mi, int thread_mask, bool provisioning)
 {
   mysql_mutex_t *lock_io=0, *lock_sql=0, *lock_cond_io=0, *lock_cond_sql=0;
   mysql_cond_t* cond_io=0, *cond_sql=0;
   int error=0;
   const char *errmsg;
   DBUG_ENTER("start_slave_threads");
+
+  mi->provisioning_mode= provisioning;
 
   if (need_slave_mutex)
   {

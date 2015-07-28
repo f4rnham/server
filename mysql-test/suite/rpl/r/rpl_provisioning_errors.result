@@ -31,6 +31,18 @@ STOP SLAVE;
 RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 SET GLOBAL debug_dbug="-d,FORCE_SLAVE_TO_RECONNECT_DUMP";
+DROP DATABASE IF EXISTS test;
+SET GLOBAL debug_dbug="+d,provisioning_wait";
+LOAD DATA FROM MASTER;
+START SLAVE;
+ERROR HY000: Provisioning is already running, run STOP SLAVE command to interrupt it
+SET GLOBAL debug_dbug="-d,provisioning_wait";
+include/wait_for_slave_sql_to_stop.inc
+START SLAVE;
+STOP SLAVE;
+RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+DROP DATABASE IF EXISTS test;
 SET GLOBAL debug_dbug="";
 SET GLOBAL debug_dbug="";
 CREATE DATABASE test;

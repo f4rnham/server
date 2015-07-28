@@ -3045,6 +3045,14 @@ int start_slave(THD* thd , Master_info* mi,  bool net_report)
   // Get a mask of _stopped_ threads
   init_thread_mask(&thread_mask,mi,1 /* inverse */);
 
+  // If last time slave threads were started in provisioning mode
+  // and are still running, report error
+  if (mi->provisioning_mode && thread_mask != (SLAVE_IO | SLAVE_SQL))
+  {
+    slave_errno= ER_PROVISIONING_RUNNING;
+    goto err;
+  }
+
   if (thd->lex->mi.gtid_pos_str.str)
   {
     if (thread_mask != (SLAVE_IO|SLAVE_SQL))
@@ -3318,7 +3326,6 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
   else
   {
     DBUG_ASSERT(!mi->slave_running && !mi->rli.slave_running);
-    mi->provisioning_mode= true;
 
     DBUG_EXECUTE_IF("provisioning_test_running",
                     /*os_event_create();*/
@@ -3326,7 +3333,7 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
 
     slave_errno = start_slave_threads(0 /*no mutex */,
                                       1 /* wait for start */,
-                                      mi, thread_mask);
+                                      mi, thread_mask, true);
 
     DBUG_EXECUTE_IF("provisioning_test_running",
                     /*os_event_wait(mi->dump_requested_semaphore);*/
