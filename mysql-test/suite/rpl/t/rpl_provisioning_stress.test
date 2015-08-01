@@ -1,0 +1,61 @@
+--skip Test requires manual setup
+
+# Stress test for MDEV-7502 Automatic provisioning of slave
+# Using Random Query Generator v2.2.0 release, downloadable from https://launchpad.net/randgen/+download
+
+# !!! Manual setup of path to Random Query Generator is necesary !!!
+--let $RQG_HOME= !!!
+
+--source include/rpl_provisioning_init.inc
+
+--connection master
+CREATE TABLE tab (pk int AUTO_INCREMENT PRIMARY KEY, col1 int, col2 int, col3 int);
+
+# Start provisioning
+SET GLOBAL debug_dbug="+d,provisioning_wait";
+--connection slave
+LOAD DATA FROM MASTER;
+
+# Generate rqg{1|2}.out files with queries
+--exec perl -I $RQG_HOME/lib $RQG_HOME/gensql.pl --grammar=$RQG_HOME/conf/example.yy --queries=1000 --dsn=dummy:print > $MYSQL_TMP_DIR/rqg1.out 2>/dev/null
+--exec perl -I $RQG_HOME/lib $RQG_HOME/gensql.pl --grammar=$RQG_HOME/conf/example.yy --queries=1000 --dsn=dummy:print > $MYSQL_TMP_DIR/rqg2.out 2>/dev/null
+
+
+# Execute queries
+--connection master
+--source $MYSQL_TMP_DIR/rqg1.out
+SET GLOBAL debug_dbug="-d,provisioning_wait";
+--source $MYSQL_TMP_DIR/rqg2.out
+
+# Wait for provisioning to finish
+--connection slave
+--source include/wait_for_slave_sql_to_stop.inc
+
+# If provisioning finished before all queries were executed, start
+# update slave from binlogs using regular replication
+--connection master
+save_master_pos;
+
+--connection slave
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+START SLAVE;
+sync_with_master;
+STOP SLAVE;
+
+# Compare master and slave
+--let $diff_tables= master:test.tab , slave:test.tab
+--source include/diff_tables.inc
+
+# Cleanup
+--connection master
+DROP DATABASE test;
+CREATE DATABASE test;
+SET GLOBAL debug_dbug="";
+
+--connection slave
+DROP DATABASE test;
+CREATE DATABASE test;
+SET GLOBAL debug_dbug="";
+
+--let $rpl_only_running_threads= 1
+--source include/rpl_end.inc
