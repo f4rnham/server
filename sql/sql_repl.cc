@@ -3340,7 +3340,6 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
                     while (!mi->dump_requested_semaphore) ;);
   }
 
-err:
   unlock_slave_threads(mi);
   thd_proc_info(thd, 0);
 

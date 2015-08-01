@@ -3752,7 +3752,7 @@ static int try_to_reconnect(THD *thd, MYSQL *mysql, Master_info *mi,
   if (mi->provisioning_mode)
   {
     mi->report(ERROR_LEVEL, ER_PROVISIONING_DISCONNECTED, NULL,
-               ER(ER_PROVISIONING_DISCONNECTED));
+               "%s", ER(ER_PROVISIONING_DISCONNECTED));
     return 1;
   }
 

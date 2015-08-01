@@ -191,6 +191,7 @@ public:
                    to see the error number.
   */
   bool execute_direct(LEX_STRING sql_text);
+  bool execute_direct(char *sql_text, size_t length= 0);
 
   /**
     Same as the previous, but takes an instance of Server_runnable

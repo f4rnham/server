@@ -4203,6 +4203,15 @@ Ed_connection::execute_direct(LEX_STRING sql_text)
   return execute_direct(&execute_sql_statement);
 }
 
+bool
+Ed_connection::execute_direct(char *sql_text, size_t length)
+{
+  LEX_STRING tmp_query;
+  tmp_query.str= sql_text;
+  tmp_query.length= length ? length : strlen(sql_text);
+
+  return execute_direct(tmp_query);
+}
 
 /**
   Execute a fragment of server functionality without an effect on

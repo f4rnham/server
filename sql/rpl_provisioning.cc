@@ -317,7 +317,7 @@ void provisioning_send_info::free_key_range()
 
 bool provisioning_send_info::build_database_list()
 {
-  if (connection->execute_direct({ C_STRING_WITH_LEN("SHOW DATABASES") }))
+  if (connection->execute_direct(C_STRING_WITH_LEN("SHOW DATABASES")))
   {
     record_ed_connection_error("Failed to query existing databases");
     return true;
@@ -402,7 +402,7 @@ bool provisioning_send_info::build_table_list()
   quote_name(database->str, name_buff);
   dynstr_append(&query, name_buff);
 
-  if (connection->execute_direct({ query.str, query.length }))
+  if (connection->execute_direct(query.str, query.length))
   {
     record_ed_connection_error("Failed to query tables from database");
     dynstr_free(&query);
@@ -553,7 +553,7 @@ bool provisioning_send_info::send_create_database()
   quote_name(database->str, name_buff);
   dynstr_append(&query, name_buff);
 
-  if (connection->execute_direct({ query.str, query.length }))
+  if (connection->execute_direct(query.str, query.length))
   {
     dynstr_free(&query);
     record_ed_connection_error("Failed to retrieve database structure");
@@ -611,7 +611,7 @@ bool provisioning_send_info::send_create_table()
   quote_name(table, name_buff);
   dynstr_append(&query, name_buff);
 
-  if (connection->execute_direct({ query.str, query.length }))
+  if (connection->execute_direct(query.str, query.length))
   {
     dynstr_free(&query);
     record_ed_connection_error("Failed to retrieve table structure");
@@ -869,7 +869,7 @@ bool provisioning_send_info::send_create_view()
   init_dynamic_string(&query, "SHOW CREATE VIEW ", 0, 0);
   dynstr_append(&query, name->str);
 
-  if (connection->execute_direct({ query.str, query.length }))
+  if (connection->execute_direct(query.str, query.length))
   {
     dynstr_free(&query);
     record_ed_connection_error("Failed to retrieve view structure");
@@ -939,7 +939,7 @@ bool provisioning_send_info::send_create_routines()
     dynstr_append(&query, db_name_buff_escaped);
     dynstr_append(&query, "'");
 
-    if (connection->execute_direct({ query.str, query.length }))
+    if (connection->execute_direct(query.str, query.length))
     {
       record_ed_connection_error("Failed to query existing routines");
       dynstr_free(&query);
