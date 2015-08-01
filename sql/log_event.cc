@@ -439,6 +439,7 @@ inline int provisioning_error_code(int err_code)
   {
     case ER_NO_SUCH_TABLE:
     case ER_DUP_ENTRY:
+    case ER_KEY_NOT_FOUND:
       return 1;
   }
 

@@ -16,12 +16,25 @@ SET GLOBAL debug_dbug="+d,provisioning_wait";
 --connection slave
 LOAD DATA FROM MASTER;
 
-# Now work with data in table on master
+# Now modify data in table on master while table does not exist on slave
 --connection master
 UPDATE test.t1 SET b = 2 WHERE a = 1;
 DELETE FROM test.t1 WHERE a= 2;
 INSERT INTO test.t1 VALUES (3, 3);
 
+# Create table on slave and modify data on master
+--connection slave
+CREATE DATABASE test;
+CREATE TABLE test.t1 (a int, b int, PRIMARY KEY (a));
+--connection master
+UPDATE test.t1 SET b = 3 WHERE a = 1;
+DELETE FROM test.t1 WHERE a= 3;
+INSERT INTO test.t1 VALUES (4, 4);
+
+# Now clean up manually created data on slave and start provisioning
+--connection slave
+DROP DATABASE test;
+--connection master
 SET GLOBAL debug_dbug="-d,provisioning_wait";
 
 # Provisioning is completed after sql thread was shut down
