@@ -433,6 +433,18 @@ inline int ignored_error_code(int err_code)
   return err_code == ER_SLAVE_IGNORED_TABLE;
 }
 
+inline int provisioning_error_code(int err_code)
+{
+  switch (err_code)
+  {
+    case ER_NO_SUCH_TABLE:
+    case ER_DUP_ENTRY:
+      return 1;
+  }
+
+  return 0;
+}
+
 /*
   This function converts an engine's error to a server error.
    
@@ -9731,23 +9743,28 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
                    (long long)wsrep_thd_trx_seqno(thd));
       }
 #endif
-      if ((thd->is_slave_error || thd->is_fatal_error) &&
-          !is_parallel_retry_error(rgi, actual_error))
+      // In provisioning mode, silently ignore table not found error
+      if (!rli->mi->provisioning_mode || !provisioning_error_code(actual_error))
       {
-        /*
-          Error reporting borrowed from Query_log_event with many excessive
-          simplifications. 
-          We should not honour --slave-skip-errors at this point as we are
-          having severe errors which should not be skiped.
-        */
-        rli->report(ERROR_LEVEL, actual_error, rgi->gtid_info(),
-                    "Error executing row event: '%s'",
-                    (actual_error ? thd->get_stmt_da()->message() :
-                     "unexpected success or fatal error"));
-        thd->is_slave_error= 1;
+        if ((thd->is_slave_error || thd->is_fatal_error) &&
+            !is_parallel_retry_error(rgi, actual_error))
+        {
+          /*
+            Error reporting borrowed from Query_log_event with many excessive
+            simplifications.
+            We should not honour --slave-skip-errors at this point as we are
+            having severe errors which should not be skiped.
+            */
+          rli->report(ERROR_LEVEL, actual_error, rgi->gtid_info(),
+                      "Error executing row event: '%s'",
+                      (actual_error ? thd->get_stmt_da()->message() :
+                      "unexpected success or fatal error"));
+          thd->is_slave_error= 1;
+        }
+        /* remove trigger's tables */
+        error= actual_error;
       }
-      /* remove trigger's tables */
-      error= actual_error;
+
       goto err;
     }
 
@@ -9929,21 +9946,31 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
       if (error)
       {
         int actual_error= convert_handler_error(error, thd, table);
-        bool idempotent_error= (idempotent_error_code(error) &&
-                               (slave_exec_mode == SLAVE_EXEC_MODE_IDEMPOTENT));
-        bool ignored_error= (idempotent_error == 0 ?
-                             ignored_error_code(actual_error) : 0);
 
-        if (idempotent_error || ignored_error)
+        // Ignore certain errors during provisioning
+        if (rli->mi->provisioning_mode && provisioning_error_code(actual_error))
         {
-          if (global_system_variables.log_warnings)
-            slave_rows_error_report(WARNING_LEVEL, error, rgi, thd, table,
-                                    get_type_str(),
-                                    RPL_LOG_NAME, (ulong) log_pos);
           clear_all_errors(thd, const_cast<Relay_log_info*>(rli));
           error= 0;
-          if (idempotent_error == 0)
-            break;
+        }
+        else
+        {
+          bool idempotent_error= (idempotent_error_code(error) &&
+                                 (slave_exec_mode == SLAVE_EXEC_MODE_IDEMPOTENT));
+          bool ignored_error= (idempotent_error == 0 ?
+                               ignored_error_code(actual_error) : 0);
+
+          if (idempotent_error || ignored_error)
+          {
+            if (global_system_variables.log_warnings)
+              slave_rows_error_report(WARNING_LEVEL, error, rgi, thd, table,
+                                      get_type_str(),
+                                      RPL_LOG_NAME, (ulong) log_pos);
+            clear_all_errors(thd, const_cast<Relay_log_info*>(rli));
+            error= 0;
+            if (idempotent_error == 0)
+              break;
+          }
         }
       }
 

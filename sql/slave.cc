@@ -3302,19 +3302,6 @@ int apply_event_and_update_pos(Log_event* ev, THD* thd,
                             ev->get_type_str(), explain[reason]));
 #endif
 
-  // Provisioning mode ignores errors during event apply, they are related
-  // to data, which are not yet on slave
-  if (rli->mi->provisioning_mode && exec_res)
-  {
-    // But handle temporary events as usually with retry
-    if (!has_temporary_error(thd))
-    {
-      thd->clear_error();
-      rli->clear_error();
-      exec_res= 0;
-    }
-  }
-
   DBUG_PRINT("info", ("apply_event error = %d", exec_res));
   if (exec_res == 0)
   {

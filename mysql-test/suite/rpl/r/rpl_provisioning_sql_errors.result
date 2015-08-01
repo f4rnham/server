@@ -6,17 +6,18 @@ CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 RESET MASTER;
 CREATE TABLE test.t1 (a int, b int, PRIMARY KEY (a));
-INSERT INTO test.t1 VALUES (1, 1);
+INSERT INTO test.t1 VALUES (1, 1), (2, 2);
 SET GLOBAL debug_dbug="+d,provisioning_wait";
 LOAD DATA FROM MASTER;
 UPDATE test.t1 SET b = 2 WHERE a = 1;
-INSERT INTO test.t1 VALUES (2, 2);
+DELETE FROM test.t1 WHERE a= 2;
+INSERT INTO test.t1 VALUES (3, 3);
 SET GLOBAL debug_dbug="-d,provisioning_wait";
 include/wait_for_slave_sql_to_stop.inc
 SELECT * FROM test.t1;
 a	b
 1	2
-2	2
+3	3
 DROP TABLE test.t1;
 SET GLOBAL debug_dbug="";
 DROP TABLE test.t1;
