@@ -43,6 +43,16 @@ STOP SLAVE;
 RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE IF EXISTS test;
+SET GLOBAL debug_dbug="+d,provisioning_wait";
+LOAD DATA FROM MASTER;
+CREATE TABLE test.t2 (a int);
+include/wait_for_slave_sql_error.inc [errno=1981]
+SET GLOBAL debug_dbug="-d,provisioning_wait";
+STOP SLAVE;
+RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+DROP DATABASE IF EXISTS test;
+DROP TABLE test.t2;
 SET GLOBAL debug_dbug="";
 SET GLOBAL debug_dbug="";
 CREATE DATABASE test;

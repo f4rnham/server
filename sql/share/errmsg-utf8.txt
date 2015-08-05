@@ -7135,3 +7135,5 @@ ER_PROVISIONING_DISCONNECTED
         eng "Slave disconnected during provisioning, drop already provisioned databases from slave and try again"
 ER_PROVISIONING_RUNNING
         eng "Provisioning is already running, run STOP SLAVE command to interrupt it"
+ER_PROVISIONING_DDL_INTERRUPT
+        eng "Provisioning was interrupted because slave received query event (%s), there was either executed DDL query on master, or masters 'binlog_format' variable is not set to ROW"

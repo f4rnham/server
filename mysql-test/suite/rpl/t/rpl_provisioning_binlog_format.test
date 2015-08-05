@@ -1,0 +1,35 @@
+# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
+# Tested functionality of LOAD DATA FROM MASTER - masters binlog_format != ROW
+
+--let $invert_binlog_format= 1
+--source include/rpl_provisioning_init.inc
+
+# Wait with provisioning, only binlog events are important now
+--connection master
+SET GLOBAL debug_dbug="+d,provisioning_wait";
+CREATE TABLE test.t1 (a int, PRIMARY KEY (a));
+
+--connection slave
+LOAD DATA FROM MASTER;
+
+--connection master
+UPDATE test.t1 SET a= 1;
+SET GLOBAL debug_dbug="-d,provisioning_wait";
+
+# Expecting slave error
+--connection slave
+--let $slave_sql_errno= 1981
+--source include/wait_for_slave_sql_error.inc
+
+# Cleanup
+--connection master
+SET GLOBAL debug_dbug="";
+DROP TABLE test.t1;
+
+--connection slave
+SET GLOBAL debug_dbug="";
+CREATE DATABASE test;
+RESET SLAVE;
+
+--let $rpl_only_running_threads= 1
+--source include/rpl_end.inc

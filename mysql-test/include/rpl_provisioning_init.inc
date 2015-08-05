@@ -12,6 +12,7 @@
 #   [--let $rpl_skip_start_slave= 1]
 #   [--let $rpl_debug= 1]
 #   [--let $slave_timeout= NUMBER]
+#   [--let $invert_binlog_format= 1]
 #   --source include/rpl_provisioning_inite.inc
 #
 # Parameters:
@@ -22,12 +23,24 @@
 #
 #   $rpl_server_count
 #     See include/master-slave.inc
+#
+#   $invert_binlog_format
+#     Test will be executed only in non-row binlog formats (stmt, mix)
+#     opposed to usual - run test only in row binlog format
 
 --let $include_filename= rpl_provisioning_init.inc
 --source include/begin_include_file.inc
 
-# Replication requires row binlog events
---source include/have_binlog_format_mixed_or_row.inc
+# Provisioning requires row binlog events
+if (!$invert_binlog_format)
+{
+    --source include/have_binlog_format_row.inc
+}
+
+if ($invert_binlog_format)
+{
+    --source include/have_binlog_format_mixed_or_statement.inc
+}
 
 # Start regular replication
 --source include/master-slave.inc

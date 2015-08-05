@@ -521,6 +521,17 @@ struct sql_ex_info
 #define LOG_EVENT_RELAY_LOG_F 0x40
 
 /**
+   @def LOG_EVENT_PROVISIONING_F
+
+   Events with this flag are generated only during provisioning and are
+   only DDL events accepted by slave during provisioning
+
+   This is a MariaDB flag; we allocate it from the end of the available
+   values to reduce risk of conflict with new MySQL flags.
+*/
+#define LOG_EVENT_PROVISIONING_F 0x4000
+
+/**
    @def LOG_EVENT_SKIP_REPLICATION_F
 
    Flag set by application creating the event (with @@skip_replication); the

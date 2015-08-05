@@ -512,6 +512,8 @@ bool provisioning_send_info::event_to_packet(Log_event &evt, String &packet)
 /**
   Converts <code>Log_event</code> to replication packet and sends it to slave
 
+  Also sets LOG_EVENT_PROVISIONING_F flag to event
+
   @return false - ok
           true  - error
  */
@@ -519,6 +521,9 @@ bool provisioning_send_info::event_to_packet(Log_event &evt, String &packet)
 bool provisioning_send_info::send_event(Log_event &evt)
 {
   String packet;
+
+  // Slave will accept this event even if it modifies data structures
+  evt.flags|= LOG_EVENT_PROVISIONING_F;
 
   if (event_to_packet(evt, packet))
     return true;

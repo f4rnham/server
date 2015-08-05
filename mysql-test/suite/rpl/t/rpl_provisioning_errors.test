@@ -106,6 +106,39 @@ DROP DATABASE IF EXISTS test;
 --enable_warnings
 
 #
+# DDL on master during provisioning
+#
+--connection master
+SET GLOBAL debug_dbug="+d,provisioning_wait";
+
+--connection slave
+LOAD DATA FROM MASTER;
+
+--connection master
+CREATE TABLE test.t2 (a int);
+
+# Expecting slave error
+--connection slave
+--let $slave_sql_errno= 1981
+--source include/wait_for_slave_sql_error.inc
+
+# Let master finish too
+--connection master
+SET GLOBAL debug_dbug="-d,provisioning_wait";
+
+# Cleanup after test case
+--connection slave
+STOP SLAVE;
+RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+# Creation of database `test` depends purely on timing and it has nothing to do with this test case
+--disable_warnings
+DROP DATABASE IF EXISTS test;
+--enable_warnings
+--connection master
+DROP TABLE test.t2;
+
+#
 # Another test case
 #
 

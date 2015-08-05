@@ -1,0 +1,18 @@
+include/rpl_provisioning_init.inc
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+DROP DATABASE test;
+SET GLOBAL debug_dbug="+d,provisioning_wait";
+CREATE TABLE test.t1 (a int, PRIMARY KEY (a));
+LOAD DATA FROM MASTER;
+UPDATE test.t1 SET a= 1;
+SET GLOBAL debug_dbug="-d,provisioning_wait";
+include/wait_for_slave_sql_error.inc [errno=1981]
+SET GLOBAL debug_dbug="";
+DROP TABLE test.t1;
+SET GLOBAL debug_dbug="";
+CREATE DATABASE test;
+RESET SLAVE;
+include/rpl_end.inc
