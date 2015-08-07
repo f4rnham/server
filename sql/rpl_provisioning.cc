@@ -672,6 +672,11 @@ int8 provisioning_send_info::send_table_data()
   handler *hdl= table->file;
   DBUG_ASSERT(hdl);
 
+  // When building log events, table->write_set is used to determine
+  // which columns should be written, as we are sending everything to slave,
+  // set all bits
+  bitmap_set_all(table->write_set);
+
   // Initialize scan from last remembered position - can be NULL but it is
   // valid function argument
   if ((error= hdl->prepare_range_scan(row_batch_end, NULL)) != 0)
@@ -704,8 +709,7 @@ int8 provisioning_send_info::send_table_data()
 
     Table_map_log_event map_evt(thd, table, table->s->table_map_id, false);
 
-    Write_rows_log_event evt(thd, table, table->s->table_map_id,
-                             &table->s->all_set, false);
+    Write_rows_log_event evt(thd, table, table->s->table_map_id, false);
 
     evt.set_flags(Rows_log_event::STMT_END_F);
 

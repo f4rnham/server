@@ -3177,6 +3177,8 @@ int start_slave(THD* thd , Master_info* mi,  bool net_report)
                                           0 /*no mutex */,
                                           1 /* wait for start */,
                                           mi,
+                                          master_info_file_tmp,
+                                          relay_log_info_file_tmp,
                                           thread_mask);
     }
     else
@@ -3333,9 +3335,13 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
                     /*os_event_create();*/
                     mi->dump_requested_semaphore= 0;);
 
-    slave_errno = start_slave_threads(0 /*no mutex */,
+    slave_errno = start_slave_threads(thd,
+                                      0 /*no mutex */,
                                       1 /* wait for start */,
-                                      mi, thread_mask, true);
+                                      mi,
+                                      master_info_file_tmp,
+                                      relay_log_info_file_tmp,
+                                      thread_mask, true);
 
     DBUG_EXECUTE_IF("provisioning_test_running",
                     /*os_event_wait(mi->dump_requested_semaphore);*/

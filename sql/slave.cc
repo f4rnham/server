@@ -434,6 +434,8 @@ int init_slave()
                             1 /* need mutex */,
                             0 /* no wait for start*/,
                             active_mi,
+                            master_info_file,
+                            relay_log_info_file,
                             SLAVE_IO | SLAVE_SQL))
     {
       sql_print_error("Failed to create slave threads");
@@ -889,7 +891,8 @@ int start_slave_thread(
 int start_slave_threads(THD *thd,
                         bool need_slave_mutex, bool wait_for_start,
                         Master_info* mi, const char* master_info_fname,
-                        const char* slave_info_fname, int thread_mask)
+                        const char* slave_info_fname, int thread_mask,
+                        bool provisioning)
 {
   mysql_mutex_t *lock_io=0, *lock_sql=0, *lock_cond_io=0, *lock_cond_sql=0;
   mysql_cond_t* cond_io=0, *cond_sql=0;

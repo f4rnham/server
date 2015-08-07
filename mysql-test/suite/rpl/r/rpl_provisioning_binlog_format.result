@@ -9,7 +9,7 @@ CREATE TABLE test.t1 (a int, PRIMARY KEY (a));
 LOAD DATA FROM MASTER;
 UPDATE test.t1 SET a= 1;
 SET GLOBAL debug_dbug="-d,provisioning_wait";
-include/wait_for_slave_sql_error.inc [errno=1981]
+include/wait_for_slave_sql_error.inc [errno=1983]
 SET GLOBAL debug_dbug="";
 DROP TABLE test.t1;
 SET GLOBAL debug_dbug="";

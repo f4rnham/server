@@ -8,7 +8,7 @@
 #
 --connection slave
 CHANGE MASTER TO MASTER_USE_GTID= no;
---error 1978
+--error 1980
 LOAD DATA FROM MASTER;
 
 # Cleanup after test case
@@ -32,11 +32,11 @@ CREATE TABLE test.t1 (a int);
 INSERT INTO test.t1 VALUES (1), (2), (3), (4), (5);
 
 --connection slave
-call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1977 and message: 'Table does not contain primary key' while processing `test`.`t1`, Internal MariaDB error code: 1977");
+call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1979 and message: 'Table does not contain primary key' while processing `test`.`t1`, Internal MariaDB error code: 1979");
 LOAD DATA FROM MASTER;
 
 --let $show_slave_io_error= 1
---let $slave_io_errno= 1977
+--let $slave_io_errno= 1979
 --source include/wait_for_slave_io_error.inc
 RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
@@ -55,11 +55,11 @@ DROP DATABASE IF EXISTS test;
 #
 --connection slave
 SET GLOBAL debug_dbug="+d,FORCE_SLAVE_TO_RECONNECT_DUMP";
-call mtr.add_suppression("Slave I/O: Slave disconnected during provisioning, drop already provisioned databases from slave and try again, Internal MariaDB error code: 1979");
+call mtr.add_suppression("Slave I/O: Slave disconnected during provisioning, drop already provisioned databases from slave and try again, Internal MariaDB error code: 1981");
 LOAD DATA FROM MASTER;
 
 --let $show_slave_io_error= 1
---let $slave_io_errno= 1979
+--let $slave_io_errno= 1981
 --source include/wait_for_slave_io_error.inc
 STOP SLAVE;
 RESET SLAVE;
@@ -83,7 +83,7 @@ SET GLOBAL debug_dbug="+d,provisioning_wait";
 LOAD DATA FROM MASTER;
 
 # START SLAVE fails with error
---error 1980
+--error 1982
 START SLAVE;
 
 # Wait for provisioning to end
@@ -119,7 +119,7 @@ CREATE TABLE test.t2 (a int);
 
 # Expecting slave error
 --connection slave
---let $slave_sql_errno= 1981
+--let $slave_sql_errno= 1983
 --source include/wait_for_slave_sql_error.inc
 
 # Let master finish too
