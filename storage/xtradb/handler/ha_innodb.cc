@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2014, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2000, 2015, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, 2009 Google Inc.
 Copyright (c) 2009, Percona Inc.
 Copyright (c) 2012, Facebook Inc.
@@ -108,7 +108,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "page0zip.h"
 #include "fil0pagecompress.h"
 
-
 #define thd_get_trx_isolation(X) ((enum_tx_isolation)thd_tx_isolation(X))
 
 #ifdef MYSQL_DYNAMIC_PLUGIN
@@ -130,10 +129,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifdef WITH_WSREP
 #include "dict0priv.h"
 #include "../storage/innobase/include/ut0byte.h"
-#include <wsrep_mysqld.h>
 #include <mysql/service_md5.h>
 
-extern my_bool wsrep_certify_nonPK;
 class  binlog_trx_data;
 extern handlerton *binlog_hton;
 
@@ -157,6 +154,7 @@ wsrep_fake_trx_id(handlerton* hton, THD *thd);
 static int innobase_wsrep_set_checkpoint(handlerton* hton, const XID* xid);
 static int innobase_wsrep_get_checkpoint(handlerton* hton, XID* xid);
 #endif /* WITH_WSREP */
+
 /** to protect innobase_open_files */
 static mysql_mutex_t innobase_share_mutex;
 /** to force correct commit order in binlog */
@@ -3356,19 +3354,6 @@ trx_is_strict(
 	return(trx && trx->mysql_thd && THDVAR(trx->mysql_thd, strict_mode));
 }
 
-/**********************************************************************//**
-Determines if the current MySQL thread is running in strict mode.
-If thd==NULL, THDVAR returns the global value of innodb-strict-mode.
-@return	TRUE if strict */
-UNIV_INLINE
-ibool
-thd_is_strict(
-/*==========*/
-	THD*	thd)	/*!< in: MySQL thread descriptor */
-{
-	return(THDVAR(thd, strict_mode));
-}
-
 /**************************************************************//**
 Resets some fields of a prebuilt struct. The template is used in fast
 retrieval of just those column values MySQL needs in its processing. */
@@ -5113,9 +5098,9 @@ innobase_kill_connection(
 		trx_mutex_enter(trx);
 
 		/* Cancel a pending lock request. */
-		if (trx->lock.wait_lock)
+		if (trx->lock.wait_lock) {
 			lock_cancel_waiting_and_release(trx->lock.wait_lock);
-
+		}
 		trx_mutex_exit(trx);
 		if (!owner || owner != cur) {
 			lock_mutex_exit();
@@ -6963,10 +6948,10 @@ innobase_read_from_2_little_endian(
 	return((uint) ((ulint)(buf[0]) + 256 * ((ulint)(buf[1]))));
 }
 
+#ifdef WITH_WSREP
 /*******************************************************************//**
 Stores a key value for a row to a buffer.
 @return	key value length as stored in buff */
-#ifdef WITH_WSREP
 UNIV_INTERN
 uint
 wsrep_store_key_val_for_row(
@@ -8136,11 +8121,11 @@ ha_innobase::write_row(
 	dberr_t		error;
 	int		error_result= 0;
 	ibool		auto_inc_used= FALSE;
-	ulint		sql_command;
-	trx_t*		trx = thd_to_trx(user_thd);
 #ifdef WITH_WSREP
 	ibool           auto_inc_inserted= FALSE; /* if NULL was inserted */
 #endif
+	ulint		sql_command;
+	trx_t*		trx = thd_to_trx(user_thd);
 
 	DBUG_ENTER("ha_innobase::write_row");
 
@@ -8178,7 +8163,9 @@ ha_innobase::write_row(
 	     || sql_command == SQLCOM_CREATE_INDEX
 #ifdef WITH_WSREP
 	     || (wsrep_on(user_thd) && wsrep_load_data_splitting &&
-		 sql_command == SQLCOM_LOAD)
+		 sql_command == SQLCOM_LOAD                      &&
+		 !thd_test_options(
+			user_thd, OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN))
 #endif /* WITH_WSREP */
 	     || sql_command == SQLCOM_DROP_INDEX)
 	    && num_write_row >= 10000) {
@@ -8222,15 +8209,19 @@ no_commit:
 			;
 		} else if (src_table == prebuilt->table) {
 #ifdef WITH_WSREP
-			if (wsrep_on(user_thd)) {
+			if (wsrep_on(user_thd) && wsrep_load_data_splitting &&
+			    sql_command == SQLCOM_LOAD                      &&
+			    !thd_test_options(
+					      user_thd, OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN))
+			{
 				switch (wsrep_run_wsrep_commit(user_thd, 1))
 				{
 				case WSREP_TRX_OK:
-					break;
+				  break;
 				case WSREP_TRX_SIZE_EXCEEDED:
 				case WSREP_TRX_CERT_FAIL:
 				case WSREP_TRX_ERROR:
-					DBUG_RETURN(1);
+				  DBUG_RETURN(1);
 				}
 
 				if (binlog_hton->commit(binlog_hton, user_thd, 1))
@@ -8249,15 +8240,19 @@ no_commit:
 			prebuilt->sql_stat_start = TRUE;
 		} else {
 #ifdef WITH_WSREP
-			if (wsrep_on(user_thd)) {
+			if (wsrep_on(user_thd) && wsrep_load_data_splitting &&
+			    sql_command == SQLCOM_LOAD                      &&
+			    !thd_test_options(
+					      user_thd, OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN))
+			{
 				switch (wsrep_run_wsrep_commit(user_thd, 1))
 				{
 				case WSREP_TRX_OK:
-					break;
+				  break;
 				case WSREP_TRX_SIZE_EXCEEDED:
 				case WSREP_TRX_CERT_FAIL:
 				case WSREP_TRX_ERROR:
-					DBUG_RETURN(1);
+				  DBUG_RETURN(1);
 				}
 
 				if (binlog_hton->commit(binlog_hton, user_thd, 1))
@@ -8695,7 +8690,8 @@ calc_row_difference(
 				}
 			}
 		}
-		innodb_idx++;
+		if (field->stored_in_db)
+			innodb_idx++;
 	}
 
 	/* If the update changes a column with an FTS index on it, we
@@ -9090,12 +9086,13 @@ ha_innobase::delete_row(
 	innobase_active_small();
 
 #ifdef WITH_WSREP
-	if (error == DB_SUCCESS && wsrep_thd_exec_mode(user_thd) == LOCAL_STATE &&
-            wsrep_on(user_thd)) {
+	if (error == DB_SUCCESS                          &&
+	    wsrep_thd_exec_mode(user_thd) == LOCAL_STATE &&
+	    wsrep_on(user_thd)) {
 
 		if (wsrep_append_keys(user_thd, false, record, NULL)) {
 			DBUG_PRINT("wsrep", ("delete fail"));
-			error = DB_ERROR;
+			error = (dberr_t) HA_ERR_INTERNAL_ERROR;
 			goto wsrep_error;
 		}
 	}
@@ -9721,6 +9718,11 @@ ha_innobase::general_fetch(
 	int	error;
 
 	DBUG_ENTER("general_fetch");
+
+	/* If transaction is not startted do not continue, instead return a error code. */
+	if(!(prebuilt->sql_stat_start || (prebuilt->trx && prebuilt->trx->state == 1))) {
+		DBUG_RETURN(HA_ERR_END_OF_FILE);
+	}
 
 	if (UNIV_UNLIKELY(srv_pass_corrupt_table <= 1 && share
 			  && share->ib_table && share->ib_table->is_corrupt)) {
@@ -10488,6 +10490,7 @@ wsrep_append_foreign_key(
 			    wsrep_thd_query(thd) : "void");
 		return DB_ERROR;
 	}
+	wsrep_t *wsrep= get_wsrep();
 	rcode = (int)wsrep->append_key(
 		wsrep,
 		wsrep_ws_handle(thd, trx),
@@ -10544,6 +10547,7 @@ wsrep_append_key(
 		DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
 	}
 
+	wsrep_t *wsrep= get_wsrep();
 	int rcode = (int)wsrep->append_key(
 			       wsrep,
 			       wsrep_ws_handle(thd, trx),
@@ -10560,9 +10564,6 @@ wsrep_append_key(
 	}
 	DBUG_RETURN(0);
 }
-
-extern void compute_md5_hash(char *digest, const char *buf, int len);
-#define MD5_HASH compute_md5_hash
 
 int
 ha_innobase::wsrep_append_keys(
@@ -10889,18 +10890,18 @@ create_table_def(
 		/* Adjust for the FTS hidden field */
 		if (!has_doc_id_col) {
 			table = dict_mem_table_create(table_name, 0, s_cols + 1,
-						      flags, flags2, false);
+						      flags, flags2);
 
 			/* Set the hidden doc_id column. */
 			table->fts->doc_col = s_cols;
 		} else {
 			table = dict_mem_table_create(table_name, 0, s_cols,
-						      flags, flags2, false);
+						      flags, flags2);
 			table->fts->doc_col = doc_id_col;
 		}
 	} else {
 		table = dict_mem_table_create(table_name, 0, s_cols,
-					      flags, flags2, false);
+					      flags, flags2);
 	}
 
 	if (flags2 & DICT_TF2_TEMPORARY) {
@@ -11922,12 +11923,12 @@ ha_innobase::check_table_options(
 
 	if (encrypt == FIL_SPACE_ENCRYPTION_ON ||
             (encrypt == FIL_SPACE_ENCRYPTION_DEFAULT && srv_encrypt_tables)) {
-		if (!encryption_key_id_exists(options->encryption_key_id)) {
+		if (!encryption_key_id_exists((unsigned int)options->encryption_key_id)) {
 			push_warning_printf(
 				thd, Sql_condition::WARN_LEVEL_WARN,
 				HA_WRONG_CREATE_OPTION,
-				"InnoDB: ENCRYPTION_KEY_ID %lu not available",
-				options->encryption_key_id
+				"InnoDB: ENCRYPTION_KEY_ID %u not available",
+				(uint)options->encryption_key_id
 			);
 			return "ENCRYPTION_KEY_ID";
 
@@ -11994,14 +11995,14 @@ ha_innobase::create(
 	/* Cache table options */
 	ha_table_option_struct *options= form->s->option_struct;
 	fil_encryption_t encrypt = (fil_encryption_t)options->encryption;
-	ulint key_id = options->encryption_key_id;
+	uint		key_id = (uint)options->encryption_key_id;
 
 	DBUG_ENTER("ha_innobase::create");
 
 	DBUG_ASSERT(thd != NULL);
 	DBUG_ASSERT(create_info != NULL);
 
-	if (form->s->fields > REC_MAX_N_USER_FIELDS) {
+	if (form->s->stored_fields > REC_MAX_N_USER_FIELDS) {
 		DBUG_RETURN(HA_ERR_TOO_MANY_FIELDS);
 	} else if (srv_read_only_mode) {
 		DBUG_RETURN(HA_ERR_TABLE_READONLY);
@@ -13496,18 +13497,6 @@ ha_innobase::info_low(
 			prebuilt->trx->op_info =
 				"returning various info to MySQL";
 		}
-
-		my_snprintf(path, sizeof(path), "%s/%s%s",
-			    mysql_data_home, ib_table->name, reg_ext);
-
-		unpack_filename(path,path);
-
-		/* Note that we do not know the access time of the table,
-		nor the CHECK TABLE time, nor the UPDATE or INSERT time. */
-
-		if (os_file_get_status(path, &stat_info, false) == DB_SUCCESS) {
-			stats.create_time = (ulong) stat_info.ctime;
-		}
 	}
 
 	if (flag & HA_STATUS_VARIABLE) {
@@ -13792,6 +13781,20 @@ ha_innobase::info_low(
 
 		if (!(flag & HA_STATUS_NO_LOCK)) {
 			dict_table_stats_unlock(ib_table, RW_S_LATCH);
+		}
+
+		my_snprintf(path, sizeof(path), "%s/%s%s",
+			    mysql_data_home,
+			    table->s->normalized_path.str,
+			    reg_ext);
+
+		unpack_filename(path,path);
+
+		/* Note that we do not know the access time of the table,
+		nor the CHECK TABLE time, nor the UPDATE or INSERT time. */
+
+		if (os_file_get_status(path, &stat_info, false) == DB_SUCCESS) {
+			stats.create_time = (ulong) stat_info.ctime;
 		}
 	}
 
@@ -14837,8 +14840,8 @@ ha_innobase::external_lock(
 		DBUG_EXECUTE_IF("no_innodb_binlog_errors", skip = true;);
 		if (!skip) {
 #ifdef WITH_WSREP
-			if (!wsrep_on(thd)
-			    || wsrep_thd_exec_mode(thd) == LOCAL_STATE) {
+			if (!wsrep_on(thd) || wsrep_thd_exec_mode(thd) == LOCAL_STATE)
+			{
 #endif /* WITH_WSREP */
 				my_error(ER_BINLOG_STMT_MODE_AND_ROW_ENGINE, MYF(0),
 					" InnoDB is limited to row-logging when "
@@ -15959,7 +15962,7 @@ ha_innobase::get_auto_increment(
 		if (prebuilt->autoinc_increment > increment) {
 
 			WSREP_DEBUG("autoinc decrease: %llu -> %llu\n"
-				    "THD: %ld, current: %llu, autoinc: %llu", 
+				    "THD: %ld, current: %llu, autoinc: %llu",
 				    prebuilt->autoinc_increment,
 				    increment,
 				    thd_get_thread_id(ha_thd()),
@@ -18828,7 +18831,7 @@ innodb_encrypt_tables_update(
 	const void*                     save)   /*!< in: immediate result
 						from check function */
 {
-	fil_crypt_set_encrypt_tables(*static_cast<const uint*>(save));
+	fil_crypt_set_encrypt_tables(*static_cast<const ulong*>(save));
 }
 
 static SHOW_VAR innodb_status_variables_export[]= {
@@ -18938,6 +18941,7 @@ wsrep_innobase_kill_one_trx(void * const bf_thd_ptr,
 			wsrep_abort_slave_trx(bf_seqno,
 					      wsrep_thd_trx_seqno(thd));
 		} else {
+			wsrep_t *wsrep= get_wsrep();
 			rcode = wsrep->abort_pre_commit(
 				wsrep, bf_seqno,
 				(wsrep_trx_id_t)victim_trx->id
@@ -19008,9 +19012,6 @@ wsrep_innobase_kill_one_trx(void * const bf_thd_ptr,
 		break;
 	case QUERY_IDLE:
 	{
-		bool skip_abort= false;
-		wsrep_aborting_thd_t abortees;
-
 		WSREP_DEBUG("kill IDLE for %lu", victim_trx->id);
 
 		if (wsrep_thd_exec_mode(thd) == REPL_RECV) {
@@ -19024,35 +19025,22 @@ wsrep_innobase_kill_one_trx(void * const bf_thd_ptr,
                 /* This will lock thd from proceeding after net_read() */
 		wsrep_thd_set_conflict_state(thd, ABORTING);
 
-		mysql_mutex_lock(&LOCK_wsrep_rollback);
+		wsrep_lock_rollback();
 
-		abortees = wsrep_aborting_thd;
-		while (abortees && !skip_abort) {
-			/* check if we have a kill message for this already */
-			if (abortees->aborting_thd == thd) {
-				skip_abort = true;
-				WSREP_WARN("duplicate thd aborter %lu",
-					  thd_get_thread_id(thd));
-			}
-			abortees = abortees->next;
-		}
-		if (!skip_abort) {
-			wsrep_aborting_thd_t aborting = (wsrep_aborting_thd_t)
-				my_malloc(sizeof(struct wsrep_aborting_thd),
-					  MYF(0));
-			aborting->aborting_thd  = thd;
-			aborting->next          = wsrep_aborting_thd;
-			wsrep_aborting_thd      = aborting;
+		if (wsrep_aborting_thd_contains(thd)) {
+			WSREP_WARN("duplicate thd aborter %lu",
+			           thd_get_thread_id(thd));
+		} else {
+			wsrep_aborting_thd_enqueue(thd);
 			DBUG_PRINT("wsrep",("enqueuing trx abort for %lu",
-                                             thd_get_thread_id(thd)));
+			                    thd_get_thread_id(thd)));
 			WSREP_DEBUG("enqueuing trx abort for (%lu)",
-				    thd_get_thread_id(thd));
+			            thd_get_thread_id(thd));
 		}
 
 		DBUG_PRINT("wsrep",("signalling wsrep rollbacker"));
 		WSREP_DEBUG("signaling aborter");
-		mysql_cond_signal(&COND_wsrep_rollback);
-		mysql_mutex_unlock(&LOCK_wsrep_rollback);
+		wsrep_unlock_rollback();
 		wsrep_thd_UNLOCK(thd);
 
 		break;
@@ -19066,6 +19054,7 @@ wsrep_innobase_kill_one_trx(void * const bf_thd_ptr,
 
 	DBUG_RETURN(0);
 }
+
 static int
 wsrep_abort_transaction(handlerton* hton, THD *bf_thd, THD *victim_thd,
 			my_bool signal)
@@ -19073,7 +19062,7 @@ wsrep_abort_transaction(handlerton* hton, THD *bf_thd, THD *victim_thd,
 	DBUG_ENTER("wsrep_innobase_abort_thd");
 	trx_t* victim_trx = thd_to_trx(victim_thd);
 	trx_t* bf_trx     = (bf_thd) ? thd_to_trx(bf_thd) : NULL;
-	WSREP_DEBUG("abort transaction: BF: %s victim: %s", 
+	WSREP_DEBUG("abort transaction: BF: %s victim: %s",
 		    wsrep_thd_query(bf_thd),
 		    wsrep_thd_query(victim_thd));
 
@@ -21375,7 +21364,7 @@ innodb_encrypt_tables_validate(
 	if (check_sysvar_enum(thd, var, save, value))
 		return 1;
 
-	long encrypt_tables = *(long*)save;
+	ulong encrypt_tables = *(ulong*)save;
 
 	if (encrypt_tables
 	    && !encryption_key_id_exists(FIL_DEFAULT_ENCRYPTION_KEY)) {

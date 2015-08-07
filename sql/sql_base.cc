@@ -4297,7 +4297,8 @@ lock_table_names(THD *thd, const DDL_options_st &options,
       if (options.if_not_exists())
       {
         push_warning_printf(thd, Sql_condition::WARN_LEVEL_NOTE,
-                            ER_TABLE_EXISTS_ERROR, ER(ER_TABLE_EXISTS_ERROR),
+                            ER_TABLE_EXISTS_ERROR,
+                            ER_THD(thd, ER_TABLE_EXISTS_ERROR),
                             tables_start->table_name);
       }
       else
@@ -7935,7 +7936,8 @@ bool setup_fields(THD *thd, Item **ref_pointer_array,
       *(ref++)= item;
     if (item->with_sum_func && item->type() != Item::SUM_FUNC_ITEM &&
 	sum_func_list)
-      item->split_sum_func(thd, ref_pointer_array, *sum_func_list);
+      item->split_sum_func(thd, ref_pointer_array, *sum_func_list,
+                           SPLIT_SUM_SELECT);
     thd->lex->used_tables|= item->used_tables();
     thd->lex->current_select->cur_pos_in_select_list++;
   }
@@ -8042,9 +8044,10 @@ bool setup_tables(THD *thd, Name_resolution_context *context,
   if (select_lex->first_cond_optimization)
   {
     leaves.empty();
-    if (!select_lex->is_prep_leaf_list_saved)
+    if (select_lex->prep_leaf_list_state != SELECT_LEX::SAVED)
     {
       make_leaves_list(thd, leaves, tables, full_table_list, first_select_table);
+      select_lex->prep_leaf_list_state= SELECT_LEX::READY;
       select_lex->leaf_tables_exec.empty();
     }
     else
@@ -8711,7 +8714,7 @@ err_no_arena:
 */
 
 bool
-fill_record(THD * thd, TABLE *table_arg, List<Item> &fields, List<Item> &values,
+fill_record(THD *thd, TABLE *table_arg, List<Item> &fields, List<Item> &values,
             bool ignore_errors)
 {
   List_iterator_fast<Item> f(fields),v(values);
@@ -8765,13 +8768,13 @@ fill_record(THD * thd, TABLE *table_arg, List<Item> &fields, List<Item> &values,
     {
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                           ER_WARNING_NON_DEFAULT_VALUE_FOR_VIRTUAL_COLUMN,
-                          ER(ER_WARNING_NON_DEFAULT_VALUE_FOR_VIRTUAL_COLUMN),
+                          ER_THD(thd, ER_WARNING_NON_DEFAULT_VALUE_FOR_VIRTUAL_COLUMN),
                           rfield->field_name, table->s->table_name.str);
     }
     if ((!rfield->vcol_info || rfield->stored_in_db) && 
         (value->save_in_field(rfield, 0)) < 0 && !ignore_errors)
     {
-      my_message(ER_UNKNOWN_ERROR, ER(ER_UNKNOWN_ERROR), MYF(0));
+      my_message(ER_UNKNOWN_ERROR, ER_THD(thd, ER_UNKNOWN_ERROR), MYF(0));
       goto err;
     }
     rfield->set_explicit_default(value);
@@ -8917,7 +8920,7 @@ fill_record(THD *thd, TABLE *table, Field **ptr, List<Item> &values,
     {
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                           ER_WARNING_NON_DEFAULT_VALUE_FOR_VIRTUAL_COLUMN,
-                          ER(ER_WARNING_NON_DEFAULT_VALUE_FOR_VIRTUAL_COLUMN),
+                          ER_THD(thd, ER_WARNING_NON_DEFAULT_VALUE_FOR_VIRTUAL_COLUMN),
                           field->field_name, table->s->table_name.str);
     }
 

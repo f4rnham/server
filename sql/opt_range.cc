@@ -2066,7 +2066,8 @@ int QUICK_ROR_INTERSECT_SELECT::init()
     1  error
 */
 
-int QUICK_RANGE_SELECT::init_ror_merged_scan(bool reuse_handler, MEM_ROOT *alloc)
+int QUICK_RANGE_SELECT::init_ror_merged_scan(bool reuse_handler,
+                                             MEM_ROOT *local_alloc)
 {
   handler *save_file= file, *org_file;
   my_bool org_key_read;
@@ -2094,7 +2095,7 @@ int QUICK_RANGE_SELECT::init_ror_merged_scan(bool reuse_handler, MEM_ROOT *alloc
     DBUG_RETURN(0);
   }
 
-  if (!(file= head->file->clone(head->s->normalized_path.str, alloc)))
+  if (!(file= head->file->clone(head->s->normalized_path.str, local_alloc)))
   {
     /* 
       Manually set the error flag. Note: there seems to be quite a few
@@ -2182,7 +2183,7 @@ failure:
     other error code
 */
 int QUICK_ROR_INTERSECT_SELECT::init_ror_merged_scan(bool reuse_handler, 
-                                                     MEM_ROOT *alloc)
+                                                     MEM_ROOT *local_alloc)
 {
   List_iterator_fast<QUICK_SELECT_WITH_RECORD> quick_it(quick_selects);
   QUICK_SELECT_WITH_RECORD *cur;
@@ -2199,7 +2200,7 @@ int QUICK_ROR_INTERSECT_SELECT::init_ror_merged_scan(bool reuse_handler,
       There is no use of this->file. Use it for the first of merged range
       selects.
     */
-    int error= quick->init_ror_merged_scan(TRUE, alloc);
+    int error= quick->init_ror_merged_scan(TRUE, local_alloc);
     if (error)
       DBUG_RETURN(error);
     quick->file->extra(HA_EXTRA_KEYREAD_PRESERVE_FIELDS);
@@ -2211,7 +2212,7 @@ int QUICK_ROR_INTERSECT_SELECT::init_ror_merged_scan(bool reuse_handler,
     const MY_BITMAP * const save_read_set= quick->head->read_set;
     const MY_BITMAP * const save_write_set= quick->head->write_set;
 #endif
-    if (quick->init_ror_merged_scan(FALSE, alloc))
+    if (quick->init_ror_merged_scan(FALSE, local_alloc))
       DBUG_RETURN(1);
     quick->file->extra(HA_EXTRA_KEYREAD_PRESERVE_FIELDS);
 
@@ -2273,11 +2274,13 @@ int QUICK_ROR_INTERSECT_SELECT::reset()
 */
 
 bool
-QUICK_ROR_INTERSECT_SELECT::push_quick_back(MEM_ROOT *alloc, QUICK_RANGE_SELECT *quick)
+QUICK_ROR_INTERSECT_SELECT::push_quick_back(MEM_ROOT *local_alloc,
+                                            QUICK_RANGE_SELECT *quick)
 {
   QUICK_SELECT_WITH_RECORD *qr;
   if (!(qr= new QUICK_SELECT_WITH_RECORD) || 
-      !(qr->key_tuple= (uchar*)alloc_root(alloc, quick->max_used_key_length)))
+      !(qr->key_tuple= (uchar*)alloc_root(local_alloc,
+                                          quick->max_used_key_length)))
     return TRUE;
   qr->quick= quick;
   return quick_selects.push_back(qr);
@@ -8187,11 +8190,10 @@ SEL_TREE *Item_equal::get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr)
   while (it++)
   {
     Field *field= it.get_curr_field();
-    Item_result cmp_type= field->cmp_type();
     if (!((ref_tables | field->table->map) & param_comp))
     {
       tree= get_mm_parts(param, this, field, Item_func::EQ_FUNC,
-                         value, cmp_type);
+                         value, field->cmp_type());
       ftree= !ftree ? tree : tree_and(param, ftree, tree);
     }
   }
@@ -8203,19 +8205,41 @@ SEL_TREE *Item_equal::get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr)
 SEL_TREE *Item_func::get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr)
 {
   DBUG_ENTER("Item_func::get_mm_tree");
+  DBUG_RETURN(const_item() ? get_mm_tree_for_const(param, this) : NULL);
+}
+
+
+SEL_TREE *Item_func_null_predicate::get_mm_tree(RANGE_OPT_PARAM *param,
+                                                Item **cond_ptr)
+{
+  DBUG_ENTER("Item_func_null_predicate::get_mm_tree");
   if (const_item())
     DBUG_RETURN(get_mm_tree_for_const(param, this));
+  param->cond= this;
+  if (args[0]->real_item()->type() == Item::FIELD_ITEM)
+  {
+    Item_field *field_item= (Item_field*) args[0]->real_item();
+    if (!field_item->const_item())
+      DBUG_RETURN(get_full_func_mm_tree(param, this, field_item, NULL, false));
+  }
+  DBUG_RETURN(NULL);
+}
 
-  if (select_optimize() == Item_func::OPTIMIZE_NONE)
-    DBUG_RETURN(0);
+
+SEL_TREE *Item_bool_func2::get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr)
+{
+  DBUG_ENTER("Item_bool_func2::get_mm_tree");
+  if (const_item())
+    DBUG_RETURN(get_mm_tree_for_const(param, this));
 
   param->cond= this;
 
   SEL_TREE *ftree= 0;
+  DBUG_ASSERT(arg_count == 2);
   if (arguments()[0]->real_item()->type() == Item::FIELD_ITEM)
   {
     Item_field *field_item= (Item_field*) (arguments()[0]->real_item());
-    Item *value= arg_count > 1 ? arguments()[1] : NULL;
+    Item *value= arguments()[1];
     if (value && value->is_expensive())
       DBUG_RETURN(0);
     if (!arguments()[0]->real_item()->const_item())
@@ -11647,7 +11671,7 @@ int QUICK_ROR_INTERSECT_SELECT::get_next()
         if ((error= quick->get_next()))
         {
           /* On certain errors like deadlock, trx might be rolled back.*/
-          if (!current_thd->transaction_rollback_request)
+          if (!thd->transaction_rollback_request)
             quick_with_last_rowid->file->unlock_row();
           DBUG_RETURN(error);
         }
@@ -11675,7 +11699,7 @@ int QUICK_ROR_INTERSECT_SELECT::get_next()
             if ((error= quick->get_next()))
             {
               /* On certain errors like deadlock, trx might be rolled back.*/
-              if (!current_thd->transaction_rollback_request)
+              if (!thd->transaction_rollback_request)
                 quick_with_last_rowid->file->unlock_row();
               DBUG_RETURN(error);
             }
@@ -12308,28 +12332,30 @@ void QUICK_SELECT_I::add_key_name(String *str, bool *first)
 }
  
 
-Explain_quick_select* QUICK_RANGE_SELECT::get_explain(MEM_ROOT *alloc)
+Explain_quick_select* QUICK_RANGE_SELECT::get_explain(MEM_ROOT *local_alloc)
 {
   Explain_quick_select *res;
-  if ((res= new (alloc) Explain_quick_select(QS_TYPE_RANGE)))
-    res->range.set(alloc, &head->key_info[index], max_used_key_length);
+  if ((res= new (local_alloc) Explain_quick_select(QS_TYPE_RANGE)))
+    res->range.set(local_alloc, &head->key_info[index], max_used_key_length);
   return res;
 }
 
 
-Explain_quick_select* QUICK_GROUP_MIN_MAX_SELECT::get_explain(MEM_ROOT *alloc)
+Explain_quick_select*
+QUICK_GROUP_MIN_MAX_SELECT::get_explain(MEM_ROOT *local_alloc)
 {
   Explain_quick_select *res;
-  if ((res= new (alloc) Explain_quick_select(QS_TYPE_GROUP_MIN_MAX)))
-    res->range.set(alloc, &head->key_info[index], max_used_key_length);
+  if ((res= new (local_alloc) Explain_quick_select(QS_TYPE_GROUP_MIN_MAX)))
+    res->range.set(local_alloc, &head->key_info[index], max_used_key_length);
   return res;
 }
 
 
-Explain_quick_select* QUICK_INDEX_SORT_SELECT::get_explain(MEM_ROOT *alloc)
+Explain_quick_select*
+QUICK_INDEX_SORT_SELECT::get_explain(MEM_ROOT *local_alloc)
 {
   Explain_quick_select *res;
-  if (!(res= new (alloc) Explain_quick_select(get_type())))
+  if (!(res= new (local_alloc) Explain_quick_select(get_type())))
     return NULL;
 
   QUICK_RANGE_SELECT *quick;
@@ -12337,7 +12363,7 @@ Explain_quick_select* QUICK_INDEX_SORT_SELECT::get_explain(MEM_ROOT *alloc)
   List_iterator_fast<QUICK_RANGE_SELECT> it(quick_selects);
   while ((quick= it++))
   {
-    if ((child_explain= quick->get_explain(alloc)))
+    if ((child_explain= quick->get_explain(local_alloc)))
       res->children.push_back(child_explain);
     else
       return NULL;
@@ -12345,7 +12371,7 @@ Explain_quick_select* QUICK_INDEX_SORT_SELECT::get_explain(MEM_ROOT *alloc)
 
   if (pk_quick_select)
   {
-    if ((child_explain= pk_quick_select->get_explain(alloc)))
+    if ((child_explain= pk_quick_select->get_explain(local_alloc)))
       res->children.push_back(child_explain);
     else
       return NULL;
@@ -12359,17 +12385,18 @@ Explain_quick_select* QUICK_INDEX_SORT_SELECT::get_explain(MEM_ROOT *alloc)
   first
 */
 
-Explain_quick_select* QUICK_INDEX_INTERSECT_SELECT::get_explain(MEM_ROOT *alloc)
+Explain_quick_select*
+QUICK_INDEX_INTERSECT_SELECT::get_explain(MEM_ROOT *local_alloc)
 {
   Explain_quick_select *res;
   Explain_quick_select *child_explain;
 
-  if (!(res= new (alloc) Explain_quick_select(get_type())))
+  if (!(res= new (local_alloc) Explain_quick_select(get_type())))
     return NULL;
 
   if (pk_quick_select)
   {
-    if ((child_explain= pk_quick_select->get_explain(alloc)))
+    if ((child_explain= pk_quick_select->get_explain(local_alloc)))
       res->children.push_back(child_explain);
     else
       return NULL;
@@ -12379,7 +12406,7 @@ Explain_quick_select* QUICK_INDEX_INTERSECT_SELECT::get_explain(MEM_ROOT *alloc)
   List_iterator_fast<QUICK_RANGE_SELECT> it(quick_selects);
   while ((quick= it++))
   {
-    if ((child_explain= quick->get_explain(alloc)))
+    if ((child_explain= quick->get_explain(local_alloc)))
       res->children.push_back(child_explain);
     else
       return NULL;
@@ -12388,19 +12415,20 @@ Explain_quick_select* QUICK_INDEX_INTERSECT_SELECT::get_explain(MEM_ROOT *alloc)
 }
 
 
-Explain_quick_select* QUICK_ROR_INTERSECT_SELECT::get_explain(MEM_ROOT *alloc)
+Explain_quick_select*
+QUICK_ROR_INTERSECT_SELECT::get_explain(MEM_ROOT *local_alloc)
 {
   Explain_quick_select *res;
   Explain_quick_select *child_explain;
 
-  if (!(res= new (alloc) Explain_quick_select(get_type())))
+  if (!(res= new (local_alloc) Explain_quick_select(get_type())))
     return NULL;
 
   QUICK_SELECT_WITH_RECORD *qr;
   List_iterator_fast<QUICK_SELECT_WITH_RECORD> it(quick_selects);
   while ((qr= it++))
   {
-    if ((child_explain= qr->quick->get_explain(alloc)))
+    if ((child_explain= qr->quick->get_explain(local_alloc)))
       res->children.push_back(child_explain);
     else
       return NULL;
@@ -12408,7 +12436,7 @@ Explain_quick_select* QUICK_ROR_INTERSECT_SELECT::get_explain(MEM_ROOT *alloc)
 
   if (cpk_quick)
   {
-    if ((child_explain= cpk_quick->get_explain(alloc)))
+    if ((child_explain= cpk_quick->get_explain(local_alloc)))
       res->children.push_back(child_explain);
     else
       return NULL;
@@ -12417,19 +12445,20 @@ Explain_quick_select* QUICK_ROR_INTERSECT_SELECT::get_explain(MEM_ROOT *alloc)
 }
 
 
-Explain_quick_select* QUICK_ROR_UNION_SELECT::get_explain(MEM_ROOT *alloc)
+Explain_quick_select*
+QUICK_ROR_UNION_SELECT::get_explain(MEM_ROOT *local_alloc)
 {
   Explain_quick_select *res;
   Explain_quick_select *child_explain;
 
-  if (!(res= new (alloc) Explain_quick_select(get_type())))
+  if (!(res= new (local_alloc) Explain_quick_select(get_type())))
     return NULL;
 
   QUICK_SELECT_I *quick;
   List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
   while ((quick= it++))
   {
-    if ((child_explain= quick->get_explain(alloc)))
+    if ((child_explain= quick->get_explain(local_alloc)))
       res->children.push_back(child_explain);
     else
       return NULL;
@@ -12789,6 +12818,7 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, double read_time)
   uint key_infix_len= 0;          /* Length of key_infix. */
   TRP_GROUP_MIN_MAX *read_plan= NULL; /* The eventually constructed TRP. */
   uint key_part_nr;
+  uint elements_in_group;
   ORDER *tmp_group;
   Item *item;
   Item_field *item_field;
@@ -12870,10 +12900,12 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, double read_time)
   }
 
   /* Check (GA4) - that there are no expressions among the group attributes. */
+  elements_in_group= 0;
   for (tmp_group= join->group_list; tmp_group; tmp_group= tmp_group->next)
   {
     if ((*tmp_group->item)->real_item()->type() != Item::FIELD_ITEM)
       DBUG_RETURN(NULL);
+    elements_in_group++;
   }
 
   /*
@@ -12922,8 +12954,16 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, double read_time)
       there are cases Loose Scan over a multi-part index is useful).
     */
     if (!table->covering_keys.is_set(cur_index))
-      goto next_index;
-
+      continue;
+    
+    /*
+      This function is called on the precondition that the index is covering.
+      Therefore if the GROUP BY list contains more elements than the index,
+      these are duplicates. The GROUP BY list cannot be a prefix of the index.
+    */
+    if (elements_in_group > table->actual_n_key_parts(cur_index_info))
+      continue;
+    
     /*
       Unless extended keys can be used for cur_index:
       If the current storage manager is such that it appends the primary key to
@@ -12984,13 +13024,6 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, double read_time)
         else
           goto next_index;
       }
-      /*
-        This function is called on the precondition that the index is covering.
-        Therefore if the GROUP BY list contains more elements than the index,
-        these are duplicates. The GROUP BY list cannot be a prefix of the index.
-      */
-      if (cur_part == end_part && tmp_group)
-        goto next_index;
     }
     /*
       Check (GA2) if this is a DISTINCT query.
@@ -13000,8 +13033,8 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, double read_time)
       Later group_fields_array of ORDER objects is used to convert the query
       to a GROUP query.
     */
-    if ((!join->group_list && join->select_distinct) ||
-             is_agg_distinct)
+    if ((!join->group && join->select_distinct) ||
+        is_agg_distinct)
     {
       if (!is_agg_distinct)
       {
@@ -13455,13 +13488,22 @@ check_group_min_max_predicates(Item *cond, Item_field *min_max_arg_item,
         if (!simple_pred(pred, args, &inv))
           DBUG_RETURN(FALSE);
 
-        if (args[0] && args[1] && !args[2]) // this is a binary function
+        if (args[0] && args[1]) // this is a binary function or BETWEEN
         {
           DBUG_ASSERT(pred->is_bool_type());
           Item_bool_func *bool_func= (Item_bool_func*) pred;
-          if (!bool_func->can_optimize_group_min_max(min_max_arg_item,
-                                                     args[1]))
-            DBUG_RETURN(FALSE);
+          Field *field= min_max_arg_item->field;
+          if (!args[2]) // this is a binary function
+          {
+            if (!field->can_optimize_group_min_max(bool_func, args[1]))
+              DBUG_RETURN(FALSE);
+          }
+          else // this is BETWEEN
+          {
+            if (!field->can_optimize_group_min_max(bool_func, args[1]) ||
+                !field->can_optimize_group_min_max(bool_func, args[2]))
+              DBUG_RETURN(FALSE);
+          }
         }
       }
       else

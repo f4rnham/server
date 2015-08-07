@@ -74,6 +74,10 @@ char_to_byte_length_safe(uint32 char_length_arg, uint32 mbmaxlen_arg)
 }
 
 
+/* Bits for the split_sum_func() function */
+#define SPLIT_SUM_SKIP_REGISTERED 1     /* Skip registered funcs */
+#define SPLIT_SUM_SELECT 2		/* SELECT item; Split all parts */
+
 /*
    "Declared Type Collation"
    A combination of collation and its derivation.
@@ -1169,10 +1173,10 @@ public:
     return false;
   }
   virtual void split_sum_func(THD *thd, Item **ref_pointer_array,
-                              List<Item> &fields) {}
+                              List<Item> &fields, uint flags) {}
   /* Called for items that really have to be split */
   void split_sum_func2(THD *thd, Item **ref_pointer_array, List<Item> &fields,
-                       Item **ref, bool skip_registered);
+                       Item **ref, uint flags);
   virtual bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate);
   bool get_time(MYSQL_TIME *ltime)
   { return get_date(ltime, TIME_TIME_ONLY | TIME_INVALID_DATES); }
@@ -1754,9 +1758,9 @@ protected:
     {
       my_string_metadata_get(this, str->charset(), str->ptr(), str->length());
     }
-    Metadata(const String *str, uint repertoire)
+    Metadata(const String *str, uint repertoire_arg)
     {
-      MY_STRING_METADATA::repertoire= repertoire;
+      MY_STRING_METADATA::repertoire= repertoire_arg;
       MY_STRING_METADATA::char_length= str->numchars();
     }
     uint repertoire() const { return MY_STRING_METADATA::repertoire; }
@@ -2381,7 +2385,7 @@ public:
                                          cond_equal_ref);
   }
   bool is_result_field() { return false; }
-  void set_result_field(Field *field) {}
+  void set_result_field(Field *field_arg) {}
   void save_in_result_field(bool no_conversions) { }
   Item *get_tmp_table_item(THD *thd);
   bool collect_item_field_processor(uchar * arg);
@@ -2981,9 +2985,9 @@ public:
   Item_string_with_introducer(const char *str, uint length, CHARSET_INFO *cs)
     :Item_string(str, length, cs)
   { }
-  Item_string_with_introducer(const char *name,
+  Item_string_with_introducer(const char *name_arg,
                               const char *str, uint length, CHARSET_INFO *tocs)
-    :Item_string(name, str, length, tocs)
+    :Item_string(name_arg, str, length, tocs)
   { }
   virtual bool is_cs_specified() const
   {
@@ -3804,6 +3808,7 @@ public:
 
 class Item_cache;
 class Expression_cache;
+class Expression_cache_tracker;
 
 /**
   The objects of this class can store its values in an expression cache.
@@ -3838,6 +3843,7 @@ public:
   enum Type real_type() const { return orig_item->type(); }
 
   bool set_cache(THD *thd);
+  Expression_cache_tracker* init_tracker(MEM_ROOT *mem_root);
 
   bool fix_fields(THD *thd, Item **it);
   void cleanup();
@@ -4325,7 +4331,7 @@ public:
 class Item_copy_string : public Item_copy
 {
 public:
-  Item_copy_string (Item *item) : Item_copy(item) {}
+  Item_copy_string (Item *item_arg) : Item_copy(item_arg) {}
 
   String *val_str(String*);
   my_decimal *val_decimal(my_decimal *);
@@ -4361,7 +4367,7 @@ public:
 class Item_copy_uint : public Item_copy_int
 {
 public:
-  Item_copy_uint (Item *item) : Item_copy_int(item) 
+  Item_copy_uint (Item *item_arg) : Item_copy_int(item_arg) 
   {
     unsigned_flag= 1;
   }
@@ -4572,7 +4578,7 @@ public:
 	    (this->*processor)(args);
   }
   bool check_partition_func_processor(uchar *int_arg) {return TRUE;}
-  bool check_vcol_func_processor(uchar *arg) 
+  bool check_vcol_func_processor(uchar *arg_arg)
   {
     return trace_unsupported_by_check_vcol_func_processor("values");
   }
@@ -4679,7 +4685,6 @@ class Item_cache: public Item_basic_constant
 {
 protected:
   Item *example;
-  table_map used_table_map;
   /**
     Field that this object will get value from. This is used by 
     index-based subquery engines to detect and remove the equality injected 
@@ -4697,7 +4702,7 @@ protected:
   bool value_cached;
 public:
   Item_cache():
-    example(0), used_table_map(0), cached_field(0),
+    example(0), cached_field(0),
     cached_field_type(MYSQL_TYPE_STRING),
     value_cached(0)
   {
@@ -4706,7 +4711,7 @@ public:
     null_value= 1;
   }
   Item_cache(enum_field_types field_type_arg):
-    example(0), used_table_map(0), cached_field(0),
+    example(0), cached_field(0),
     cached_field_type(field_type_arg),
     value_cached(0)
   {
@@ -4714,8 +4719,6 @@ public:
     maybe_null= 1;
     null_value= 1;
   }
-
-  void set_used_tables(table_map map) { used_table_map= map; }
 
   virtual bool allocate(uint i) { return 0; }
   virtual bool setup(Item *item)
@@ -4730,7 +4733,6 @@ public:
   enum_field_types field_type() const { return cached_field_type; }
   static Item_cache* get_cache(const Item *item);
   static Item_cache* get_cache(const Item* item, const Item_result type);
-  table_map used_tables() const { return used_table_map; }
   virtual void keep_array() {}
   virtual void print(String *str, enum_query_type query_type);
   bool eq_def(Field *field) 
@@ -4781,6 +4783,7 @@ public:
       return TRUE;
     return (this->*processor)(arg);
   }
+  virtual Item *safe_charset_converter(CHARSET_INFO *tocs);
 };
 
 

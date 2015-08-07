@@ -54,9 +54,9 @@ public:
 
   TDC_element() {}
 
-  TDC_element(const char *key, uint key_length) : m_key_length(key_length)
+  TDC_element(const char *key_arg, uint key_length) : m_key_length(key_length)
   {
-    memcpy(m_key, key, key_length);
+    memcpy(m_key, key_arg, key_length);
   }
 
 
@@ -109,7 +109,7 @@ public:
 
   TABLE *free_tables_back()
   {
-    TABLE_list::Iterator it(share->tdc->free_tables);
+    TABLE_list::Iterator it(free_tables);
     TABLE *entry, *last= 0;
      while ((entry= it++))
        last= entry;

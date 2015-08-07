@@ -60,8 +60,6 @@ public:
                   SUSERVAR_FUNC, GUSERVAR_FUNC, COLLATE_FUNC,
                   EXTRACT_FUNC, CHAR_TYPECAST_FUNC, FUNC_SP, UDF_FUNC,
                   NEG_FUNC, GSYSVAR_FUNC, DYNCOL_FUNC };
-  enum optimize_type { OPTIMIZE_NONE,OPTIMIZE_KEY,OPTIMIZE_OP, OPTIMIZE_NULL,
-                       OPTIMIZE_EQUAL };
   enum Type type() const { return FUNC_ITEM; }
   virtual enum Functype functype() const   { return UNKNOWN_FUNC; }
   Item_func(void):
@@ -136,8 +134,6 @@ public:
                           COND_EQUAL **cond_equal_ref);
   SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
   bool eq(const Item *item, bool binary_cmp) const;
-  virtual optimize_type select_optimize() const { return OPTIMIZE_NONE; }
-  virtual bool have_rev_func() const { return 0; }
   virtual Item *key_item() const { return args[0]; }
   virtual bool const_item() const { return const_item_cache; }
   void set_arguments(List<Item> &list)
@@ -147,7 +143,8 @@ public:
     sync_with_sum_func_and_with_field(list);
     list.empty();                                     // Fields are used
   }
-  void split_sum_func(THD *thd, Item **ref_pointer_array, List<Item> &fields);
+  void split_sum_func(THD *thd, Item **ref_pointer_array, List<Item> &fields,
+                      uint flags);
   virtual void print(String *str, enum_query_type query_type);
   void print_op(String *str, enum_query_type query_type);
   void print_args(String *str, uint from, enum_query_type query_type);
@@ -580,28 +577,25 @@ class Item_num_op :public Item_func_numhybrid
 
 class Item_int_func :public Item_func
 {
-protected:
-  bool sargable;
 public:
   Item_int_func() :Item_func()
-  { collation.set_numeric(); fix_char_length(21); sargable= false; }
+  { collation.set_numeric(); fix_char_length(21); }
   Item_int_func(Item *a) :Item_func(a)
-  { collation.set_numeric(); fix_char_length(21); sargable= false; }
+  { collation.set_numeric(); fix_char_length(21); }
   Item_int_func(Item *a,Item *b) :Item_func(a,b)
-  { collation.set_numeric(); fix_char_length(21); sargable= false; }
+  { collation.set_numeric(); fix_char_length(21); }
   Item_int_func(Item *a,Item *b,Item *c) :Item_func(a,b,c)
-  { collation.set_numeric(); fix_char_length(21); sargable= false; }
+  { collation.set_numeric(); fix_char_length(21); }
   Item_int_func(Item *a,Item *b,Item *c, Item *d) :Item_func(a,b,c,d)
-  { collation.set_numeric(); fix_char_length(21); sargable= false; }
+  { collation.set_numeric(); fix_char_length(21); }
   Item_int_func(List<Item> &list) :Item_func(list)
-  { collation.set_numeric(); fix_char_length(21); sargable= false; }
+  { collation.set_numeric(); fix_char_length(21); }
   Item_int_func(THD *thd, Item_int_func *item) :Item_func(thd, item)
-  { collation.set_numeric(); sargable= false; }
+  { collation.set_numeric(); }
   double val_real();
   String *val_str(String*str);
   enum Item_result result_type () const { return INT_RESULT; }
   void fix_length_and_dec() {}
-  bool count_sargable_conds(uchar *arg);
 };
 
 

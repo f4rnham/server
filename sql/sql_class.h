@@ -96,6 +96,16 @@ enum enum_mark_columns
 { MARK_COLUMNS_NONE, MARK_COLUMNS_READ, MARK_COLUMNS_WRITE};
 enum enum_filetype { FILETYPE_CSV, FILETYPE_XML };
 
+enum enum_binlog_row_image {
+  /** PKE in the before image and changed columns in the after image */
+  BINLOG_ROW_IMAGE_MINIMAL= 0,
+  /** Whenever possible, before and after image contain all columns except blobs. */
+  BINLOG_ROW_IMAGE_NOBLOB= 1,
+  /** All columns in both before and after image. */
+  BINLOG_ROW_IMAGE_FULL= 2
+};
+
+
 /* Bits for different SQL modes modes (including ANSI mode) */
 #define MODE_REAL_AS_FLOAT              (1ULL << 0)
 #define MODE_PIPES_AS_CONCAT            (1ULL << 1)
@@ -487,7 +497,6 @@ enum killed_type
 
 #include "sql_lex.h"				/* Must be here */
 
-extern LEX_STRING sql_statement_names[(uint) SQLCOM_END + 1];
 class Delayed_insert;
 class select_result;
 class Time_zone;
@@ -589,6 +598,7 @@ typedef struct system_variables
   /* Flags for slow log filtering */
   ulong log_slow_rate_limit; 
   ulong binlog_format; ///< binlog format for this thd (see enum_binlog_format)
+  ulong binlog_row_image;
   ulong progress_report_time;
   ulong completion_type;
   ulong query_cache_type;
@@ -645,6 +655,8 @@ typedef struct system_variables
 
   /* Error messages */
   MY_LOCALE *lc_messages;
+  const char **errmsgs;             /* lc_messages->errmsg->errmsgs */
+
   /* Locale Support */
   MY_LOCALE *lc_time_names;
 
@@ -661,6 +673,7 @@ typedef struct system_variables
   my_bool wsrep_dirty_reads;
   uint wsrep_sync_wait;
   ulong wsrep_retry_autocommit;
+  ulong wsrep_OSU_method;
   double long_query_time_double, max_statement_time_double;
 
   my_bool pseudo_slave_mode;
@@ -675,8 +688,19 @@ typedef struct system_variables
 
 typedef struct system_status_var
 {
-  ulong com_other;
   ulong com_stat[(uint) SQLCOM_END];
+  ulong com_create_tmp_table;
+  ulong com_drop_tmp_table;
+  ulong com_other;
+
+  ulong com_stmt_prepare;
+  ulong com_stmt_reprepare;
+  ulong com_stmt_execute;
+  ulong com_stmt_send_long_data;
+  ulong com_stmt_fetch;
+  ulong com_stmt_reset;
+  ulong com_stmt_close;
+
   ulong created_tmp_disk_tables_;
   ulong created_tmp_tables_;
   ulong ha_commit_count;
@@ -729,14 +753,6 @@ typedef struct system_status_var
   ulong filesort_rows_;
   ulong filesort_scan_count_;
   ulong filesort_pq_sorts_;
-  /* Prepared statements and binary protocol */
-  ulong com_stmt_prepare;
-  ulong com_stmt_reprepare;
-  ulong com_stmt_execute;
-  ulong com_stmt_send_long_data;
-  ulong com_stmt_fetch;
-  ulong com_stmt_reset;
-  ulong com_stmt_close;
 
   /* Features used */
   ulong feature_dynamic_columns;    /* +1 when creating a dynamic column */
@@ -1784,7 +1800,7 @@ struct wait_for_commit
       return wakeup_error;
     }
   }
-  void wakeup_subsequent_commits(int wakeup_error)
+  void wakeup_subsequent_commits(int wakeup_error_arg)
   {
     /*
       Do the check inline, so only the wakeup case takes the cost of a function
@@ -1799,7 +1815,7 @@ struct wait_for_commit
       prevent a waiter from arriving just after releasing the lock.
     */
     if (subsequent_commits_list)
-      wakeup_subsequent_commits2(wakeup_error);
+      wakeup_subsequent_commits2(wakeup_error_arg);
   }
   void unregister_wait_for_prior_commit()
   {
@@ -2114,14 +2130,12 @@ public:
   int binlog_write_table_map(TABLE *table, bool is_transactional,
                              my_bool *with_annotate= 0);
   int binlog_write_row(TABLE* table, bool is_transactional,
-                       MY_BITMAP const* cols, size_t colcnt,
                        const uchar *buf);
   int binlog_delete_row(TABLE* table, bool is_transactional,
-                        MY_BITMAP const* cols, size_t colcnt,
                         const uchar *buf);
   int binlog_update_row(TABLE* table, bool is_transactional,
-                        MY_BITMAP const* cols, size_t colcnt,
                         const uchar *old_data, const uchar *new_data);
+  static void binlog_prepare_row_images(TABLE* table);
 
   void set_server_id(uint32 sid) { variables.server_id = sid; }
 
@@ -2130,11 +2144,9 @@ public:
   */
   template <class RowsEventT> Rows_log_event*
     binlog_prepare_pending_rows_event(TABLE* table, uint32 serv_id,
-                                      MY_BITMAP const* cols,
-                                      size_t colcnt,
                                       size_t needed,
                                       bool is_transactional,
-				      RowsEventT* hint);
+                                      RowsEventT* hint);
   Rows_log_event* binlog_get_pending_rows_event(bool is_transactional) const;
   void binlog_set_pending_rows_event(Rows_log_event* ev, bool is_transactional);
   inline int binlog_flush_pending_rows_event(bool stmt_end)
@@ -3375,7 +3387,7 @@ public:
   {
     int err= killed_errno();
     if (err)
-      my_message(err, ER(err), MYF(0));
+      my_message(err, ER_THD(this, err), MYF(0));
   }
   /* return TRUE if we will abort query if we make a warning now */
   inline bool really_abort_on_warning()
@@ -4372,6 +4384,8 @@ class select_insert :public select_result_interceptor {
   virtual int send_data(List<Item> &items);
   virtual void store_values(List<Item> &values);
   virtual bool can_rollback_data() { return 0; }
+  bool prepare_eof();
+  bool send_ok_packet();
   bool send_eof();
   virtual void abort_result_set();
   /* not implemented: select_insert is never re-used in prepared statements */
@@ -4615,9 +4629,10 @@ private:
 public:
   /* Number of rows in the union */
   ha_rows send_records; 
-  select_union_direct(THD *thd_arg, select_result *result,
-                      SELECT_LEX *last_select_lex):
-    select_union(thd_arg), result(result), last_select_lex(last_select_lex),
+  select_union_direct(THD *thd_arg, select_result *result_arg,
+                      SELECT_LEX *last_select_lex_arg):
+  select_union(thd_arg), result(result_arg),
+    last_select_lex(last_select_lex_arg),
     done_send_result_set_metadata(false), done_initialize_tables(false),
     limit_found_rows(0)
     { send_records= 0; }

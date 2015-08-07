@@ -228,7 +228,7 @@ a file name for --relay-log-index option", opt_relaylog_index_name);
       but a destructor will take care of that
     */
     if (rli->relay_log.open_index_file(buf_relaylog_index_name, ln, TRUE) ||
-        rli->relay_log.open(ln, LOG_BIN, 0, SEQ_READ_APPEND,
+        rli->relay_log.open(ln, LOG_BIN, 0, 0, SEQ_READ_APPEND,
                             mi->rli.max_relay_log_size, 1, TRUE))
     {
       mysql_mutex_unlock(&rli->data_lock);
@@ -1076,6 +1076,9 @@ void Relay_log_info::close_temporary_tables()
 /*
   purge_relay_logs()
 
+  @param rli		Relay log information
+  @param thd		thread id. May be zero during startup
+
   NOTES
     Assumes to have a run lock on rli and that no slave thread are running.
 */
@@ -1131,7 +1134,7 @@ int purge_relay_logs(Relay_log_info* rli, THD *thd, bool just_reset,
     rli->cur_log_fd= -1;
   }
 
-  if (rli->relay_log.reset_logs(thd, !just_reset, NULL, 0))
+  if (rli->relay_log.reset_logs(thd, !just_reset, NULL, 0, 0))
   {
     *errmsg = "Failed during log reset";
     error=1;
@@ -1768,6 +1771,13 @@ void rpl_group_info::cleanup_context(THD *thd, bool error)
       rli->clear_flag(Relay_log_info::IN_STMT);
       rli->clear_flag(Relay_log_info::IN_TRANSACTION);
     }
+
+    /*
+      Ensure we always release the domain for others to process, when using
+      --gtid-ignore-duplicates.
+    */
+    if (gtid_ignore_duplicate_state != GTID_DUPLICATE_NULL)
+      rpl_global_gtid_slave_state.release_domain_owner(this);
   }
 
   /*
@@ -1777,19 +1787,17 @@ void rpl_group_info::cleanup_context(THD *thd, bool error)
   thd->variables.option_bits&= ~OPTION_RELAXED_UNIQUE_CHECKS;
 
   /*
-    Ensure we always release the domain for others to process, when using
-    --gtid-ignore-duplicates.
-  */
-  if (gtid_ignore_duplicate_state != GTID_DUPLICATE_NULL)
-    rpl_global_gtid_slave_state.release_domain_owner(this);
-
-  /*
     Reset state related to long_find_row notes in the error log:
     - timestamp
     - flag that decides whether the slave prints or not
   */
   reset_row_stmt_start_timestamp();
   unset_long_find_row_note_printed();
+
+  DBUG_EXECUTE_IF("inject_sleep_gtid_100_x_x", {
+      if (current_gtid.domain_id == 100)
+        my_sleep(50000);
+    };);
 
   DBUG_VOID_RETURN;
 }

@@ -780,7 +780,8 @@ public:
   List<TABLE_LIST> leaf_tables;
   List<TABLE_LIST> leaf_tables_exec;
   List<TABLE_LIST> leaf_tables_prep;
-  bool is_prep_leaf_list_saved;
+  enum leaf_list_state {UNINIT, READY, SAVED};
+  enum leaf_list_state prep_leaf_list_state;
   uint insert_tables;
   st_select_lex *merged_into; /* select which this select is merged into */
                               /* (not 0 only for views/derived tables)   */
@@ -800,7 +801,7 @@ public:
     list during split_sum_func
   */
   uint select_n_having_items;
-  uint cond_count;    /* number of arguments of and/or/xor in where/having/on */
+  uint cond_count;    /* number of sargable Items in where/having/on          */
   uint between_count; /* number of between predicates in where/having/on      */
   uint max_equal_elems; /* maximal number of elements in multiple equalities  */   
   /*
@@ -2488,6 +2489,7 @@ public:
   USER_RESOURCES mqh;
   LEX_RESET_SLAVE reset_slave_info;
   ulonglong type;
+  ulong next_binlog_file_number;
   /* The following is used by KILL */
   killed_state kill_signal;
   killed_type  kill_type;
@@ -2867,21 +2869,21 @@ public:
     return false;
   }
   // Add a key as a part of CREATE TABLE or ALTER TABLE
-  bool add_key(Key::Keytype type, const LEX_STRING &name,
+  bool add_key(Key::Keytype key_type, const LEX_STRING &key_name,
                ha_key_alg algorithm, DDL_options_st ddl)
   {
     if (check_add_key(ddl) ||
-        !(last_key= new Key(type, name, algorithm, false, ddl)))
+        !(last_key= new Key(key_type, key_name, algorithm, false, ddl)))
       return true;
     alter_info.key_list.push_back(last_key);
     return false;
   }
   // Add a key for a CREATE INDEX statement
-  bool add_create_index(Key::Keytype type, const LEX_STRING &name,
+  bool add_create_index(Key::Keytype key_type, const LEX_STRING &key_name,
                         ha_key_alg algorithm, DDL_options_st ddl)
   {
     if (check_create_options(ddl) ||
-       !(last_key= new Key(type, name, algorithm, false, ddl)))
+       !(last_key= new Key(key_type, key_name, algorithm, false, ddl)))
       return true;
     alter_info.key_list.push_back(last_key);
     return false;

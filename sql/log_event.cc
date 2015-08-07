@@ -1576,7 +1576,7 @@ Log_event* Log_event::read_log_event(const char* buf, uint event_len,
       DBUG_RETURN(NULL);
 #else
     *error= ER(ER_BINLOG_READ_EVENT_CHECKSUM_FAILURE);
-    sql_print_error("%s", ER(ER_BINLOG_READ_EVENT_CHECKSUM_FAILURE));
+    sql_print_error("%s", *error);
     DBUG_RETURN(NULL);
 #endif
   }
@@ -2415,6 +2415,12 @@ log_event_print_value(IO_CACHE *file, const uchar *ptr,
   case MYSQL_TYPE_STRING:
     my_snprintf(typestr, typestr_length, "STRING(%d)", length);
     return my_b_write_quoted_with_length(file, ptr, length);
+
+  case MYSQL_TYPE_DECIMAL:
+    my_b_printf(file,
+                "!! Old DECIMAL (mysql-4.1 or earlier). "
+                "Not enough metadata to display the value. ");
+    break;
 
   default:
     {
@@ -4245,7 +4251,6 @@ int Query_log_event::do_apply_event(rpl_group_info *rgi,
                           "mysql", rpl_gtid_slave_state_table_name.str,
                           errcode,
                           thd->get_stmt_da()->message());
-            trans_rollback(thd);
             sub_id= 0;
             thd->is_slave_error= 1;
             goto end;
@@ -4366,15 +4371,15 @@ compare_errors:
         !ignored_error_code(expected_error))
     {
       rli->report(ERROR_LEVEL, 0, rgi->gtid_info(),
-                      "Query caused different errors on master and slave.     "
-                      "Error on master: message (format)='%s' error code=%d ; "
-                      "Error on slave: actual message='%s', error code=%d. "
-                      "Default database: '%s'. Query: '%s'",
-                      ER_SAFE(expected_error),
-                      expected_error,
-                      actual_error ? thd->get_stmt_da()->message() : "no error",
-                      actual_error,
-                      print_slave_db_safe(db), query_arg);
+                  "Query caused different errors on master and slave.     "
+                  "Error on master: message (format)='%s' error code=%d ; "
+                  "Error on slave: actual message='%s', error code=%d. "
+                  "Default database: '%s'. Query: '%s'",
+                  ER_SAFE_THD(thd, expected_error),
+                  expected_error,
+                  actual_error ? thd->get_stmt_da()->message() : "no error",
+                  actual_error,
+                  print_slave_db_safe(db), query_arg);
       thd->is_slave_error= 1;
     }
     /*
@@ -6018,7 +6023,7 @@ error:
     else
     {
       sql_errno=ER_UNKNOWN_ERROR;
-      err=ER(sql_errno);       
+      err= ER_THD(thd, sql_errno);
     }
     rli->report(ERROR_LEVEL, sql_errno, rgi->gtid_info(), "\
 Error '%s' running LOAD DATA INFILE on table '%s'. Default database: '%s'",
@@ -6038,7 +6043,7 @@ Error '%s' running LOAD DATA INFILE on table '%s'. Default database: '%s'",
                 print_slave_db_safe(remember_db));
 
     rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, rgi->gtid_info(),
-                ER(ER_SLAVE_FATAL_ERROR), buf);
+                ER_THD(thd, ER_SLAVE_FATAL_ERROR), buf);
     DBUG_RETURN(1);
   }
 
@@ -7377,7 +7382,6 @@ int Xid_log_event::do_apply_event(rpl_group_info *rgi)
                     "%s.%s: %d: %s",
                     "mysql", rpl_gtid_slave_state_table_name.str, ec,
                     thd->get_stmt_da()->message());
-      trans_rollback(thd);
       thd->is_slave_error= 1;
       return err;
     }
@@ -9126,7 +9130,7 @@ Execute_load_query_log_event::do_apply_event(rpl_group_info *rgi)
   if (buf == NULL)
   {
     rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, rgi->gtid_info(),
-                ER(ER_SLAVE_FATAL_ERROR), "Not enough memory");
+                ER_THD(rgi->thd, ER_SLAVE_FATAL_ERROR), "Not enough memory");
     return 1;
   }
 
@@ -9535,6 +9539,18 @@ int Rows_log_event::do_add_row_data(uchar *row_data, size_t length)
   DBUG_ENTER("Rows_log_event::do_add_row_data");
   DBUG_PRINT("enter", ("row_data: 0x%lx  length: %lu", (ulong) row_data,
                        (ulong) length));
+
+  /*
+    If length is zero, there is nothing to write, so we just
+    return. Note that this is not an optimization, since calling
+    realloc() with size 0 means free().
+   */
+  if (length == 0)
+  {
+    m_row_count++;
+    DBUG_RETURN(0);
+  }
+
   /*
     Don't print debug messages when running valgrind since they can
     trigger false warnings.
@@ -9896,12 +9912,19 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
       longer if slave has extra columns. 
      */ 
 
-    DBUG_PRINT_BITSET("debug", "Setting table's write_set from: %s", &m_cols);
+    DBUG_PRINT_BITSET("debug", "Setting table's read_set from: %s", &m_cols);
     
     bitmap_set_all(table->read_set);
+    if (get_general_type_code() == DELETE_ROWS_EVENT ||
+        get_general_type_code() == UPDATE_ROWS_EVENT)
+      bitmap_intersect(table->read_set,&m_cols);
+
     bitmap_set_all(table->write_set);
-    if (!get_flags(COMPLETE_ROWS_F))
-      bitmap_intersect(table->write_set,&m_cols);
+
+    /* WRITE ROWS EVENTS store the bitmap in m_cols instead of m_cols_ai */
+    MY_BITMAP *after_image= ((get_general_type_code() == UPDATE_ROWS_EVENT) ?
+                             &m_cols_ai : &m_cols);
+    bitmap_intersect(table->write_set, after_image);
 
     this->slave_exec_mode= slave_exec_mode_options; // fix the mode
 
@@ -9929,7 +9952,7 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
     rgi->set_row_stmt_start_timestamp();
 
     THD_STAGE_INFO(thd, stage_executing);
-    while (error == 0 && m_curr_row < m_rows_end)
+    do
     {
       /* in_use can have been set to NULL in close_tables_for_reopen */
       THD* old_thd= table->in_use;
@@ -9987,18 +10010,14 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
 
       if (!m_curr_row_end && !error)
         error= unpack_current_row(rgi);
-  
-      // at this moment m_curr_row_end should be set
-      DBUG_ASSERT(error || m_curr_row_end != NULL); 
-      DBUG_ASSERT(error || m_curr_row < m_curr_row_end);
-      DBUG_ASSERT(error || m_curr_row_end <= m_rows_end);
-  
+
       m_curr_row= m_curr_row_end;
  
       if (error == 0 && !transactional_table)
         thd->transaction.all.modified_non_trans_table=
           thd->transaction.stmt.modified_non_trans_table= TRUE;
     } // row processing loop
+    while (error == 0 && (m_curr_row != m_rows_end));
 
     /*
       Restore the sql_mode after the rows event is processed.
@@ -11037,13 +11056,14 @@ int Table_map_log_event::do_apply_event(rpl_group_info *rgi)
 
       if (thd->slave_thread)
         rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, rgi->gtid_info(),
-                    ER(ER_SLAVE_FATAL_ERROR), buf);
+                    ER_THD(thd, ER_SLAVE_FATAL_ERROR), buf);
       else
         /* 
           For the cases in which a 'BINLOG' statement is set to 
           execute in a user session 
          */
-        my_printf_error(ER_SLAVE_FATAL_ERROR, ER(ER_SLAVE_FATAL_ERROR), 
+        my_printf_error(ER_SLAVE_FATAL_ERROR,
+                        ER_THD(thd, ER_SLAVE_FATAL_ERROR), 
                         MYF(0), buf);
     } 
     
@@ -11168,9 +11188,9 @@ void Table_map_log_event::print(FILE *, PRINT_EVENT_INFO *print_event_info)
 #if !defined(MYSQL_CLIENT)
 Write_rows_log_event::Write_rows_log_event(THD *thd_arg, TABLE *tbl_arg,
                                            ulong tid_arg,
-                                           MY_BITMAP const *cols,
                                            bool is_transactional)
-  : Rows_log_event(thd_arg, tbl_arg, tid_arg, cols, is_transactional, WRITE_ROWS_EVENT_V1)
+  : Rows_log_event(thd_arg, tbl_arg, tid_arg, tbl_arg->write_set,
+                   is_transactional, WRITE_ROWS_EVENT_V1)
 {
 }
 #endif
@@ -11427,7 +11447,16 @@ Rows_log_event::write_row(rpl_group_info *rgi,
        the size of the first row and use that value to initialize
        storage engine for bulk insertion.
     */
-    ulong estimated_rows= (m_rows_end - m_curr_row) / (m_curr_row_end - m_curr_row);
+    /* this is the first row to be inserted, we estimate the rows with
+       the size of the first row and use that value to initialize
+       storage engine for bulk insertion */
+    DBUG_ASSERT(!(m_curr_row > m_curr_row_end));
+    ulong estimated_rows= 0;
+    if (m_curr_row < m_curr_row_end)
+      estimated_rows= (m_rows_end - m_curr_row) / (m_curr_row_end - m_curr_row);
+    else if (m_curr_row == m_curr_row_end)
+      estimated_rows= 1;
+
     table->file->ha_start_bulk_insert(estimated_rows);
   }
 
@@ -12182,9 +12211,9 @@ end:
 
 #ifndef MYSQL_CLIENT
 Delete_rows_log_event::Delete_rows_log_event(THD *thd_arg, TABLE *tbl_arg,
-                                             ulong tid, MY_BITMAP const *cols,
-                                             bool is_transactional)
-  : Rows_log_event(thd_arg, tbl_arg, tid, cols, is_transactional, DELETE_ROWS_EVENT_V1)
+                                             ulong tid, bool is_transactional)
+  : Rows_log_event(thd_arg, tbl_arg, tid, tbl_arg->read_set, is_transactional,
+                   DELETE_ROWS_EVENT_V1)
 {
 }
 #endif /* #if !defined(MYSQL_CLIENT) */
@@ -12312,21 +12341,11 @@ uint8 Delete_rows_log_event::get_trg_event_map()
 #if !defined(MYSQL_CLIENT)
 Update_rows_log_event::Update_rows_log_event(THD *thd_arg, TABLE *tbl_arg,
                                              ulong tid,
-                                             MY_BITMAP const *cols_bi,
-                                             MY_BITMAP const *cols_ai,
                                              bool is_transactional)
-: Rows_log_event(thd_arg, tbl_arg, tid, cols_bi, is_transactional, UPDATE_ROWS_EVENT_V1)
+: Rows_log_event(thd_arg, tbl_arg, tid, tbl_arg->read_set, is_transactional,
+                 UPDATE_ROWS_EVENT_V1)
 {
-  init(cols_ai);
-}
-
-Update_rows_log_event::Update_rows_log_event(THD *thd_arg, TABLE *tbl_arg,
-                                             ulong tid,
-                                             MY_BITMAP const *cols,
-                                             bool is_transactional)
-: Rows_log_event(thd_arg, tbl_arg, tid, cols, is_transactional, UPDATE_ROWS_EVENT_V1)
-{
-  init(cols);
+  init(tbl_arg->write_set);
 }
 
 void Update_rows_log_event::init(MY_BITMAP const *cols)
@@ -12428,7 +12447,7 @@ Update_rows_log_event::do_exec_row(rpl_group_info *rgi)
       able to skip to the next pair of updates
     */
     m_curr_row= m_curr_row_end;
-    unpack_current_row(rgi);
+    unpack_current_row(rgi, &m_cols_ai);
     thd_proc_info(thd, tmp);
     return error;
   }
@@ -12457,7 +12476,7 @@ Update_rows_log_event::do_exec_row(rpl_group_info *rgi)
 
   /* this also updates m_curr_row_end */
   thd_proc_info(thd, message);
-  if ((error= unpack_current_row(rgi)))
+  if ((error= unpack_current_row(rgi, &m_cols_ai)))
     goto err;
 
   /*
@@ -12490,9 +12509,15 @@ Update_rows_log_event::do_exec_row(rpl_group_info *rgi)
     goto err;
   }
 
+  // Temporary fix to find out why it fails [/Matz]
+  memcpy(m_table->read_set->bitmap, m_cols.bitmap, (m_table->read_set->n_bits + 7) / 8);
+  memcpy(m_table->write_set->bitmap, m_cols_ai.bitmap, (m_table->write_set->n_bits + 7) / 8);
+
+  m_table->mark_columns_per_binlog_row_image();
   error= m_table->file->ha_update_row(m_table->record[1], m_table->record[0]);
   if (error == HA_ERR_RECORD_IS_THE_SAME)
     error= 0;
+  m_table->default_column_bitmaps();
 
   if (invoke_triggers && !error &&
       process_triggers(TRG_EVENT_UPDATE, TRG_ACTION_AFTER, TRUE))
@@ -12603,7 +12628,6 @@ void Incident_log_event::pack_info(THD *thd, Protocol *protocol)
 
 
 #if WITH_WSREP && !defined(MYSQL_CLIENT)
-Format_description_log_event *wsrep_format_desc; // TODO: free them at the end
 /*
   read the first event from (*buf). The size of the (*buf) is (*buf_len).
   At the end (*buf) is shitfed to point to the following event or NULL and
@@ -12673,7 +12697,7 @@ Incident_log_event::do_apply_event(rpl_group_info *rgi)
   }
 
   rli->report(ERROR_LEVEL, ER_SLAVE_INCIDENT, NULL,
-              ER(ER_SLAVE_INCIDENT),
+              ER_THD(rgi->thd, ER_SLAVE_INCIDENT),
               description(),
               m_message.length > 0 ? m_message.str : "<none>");
   DBUG_RETURN(1);

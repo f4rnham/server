@@ -2151,17 +2151,6 @@ longlong Item_func_interval::val_int()
     1   got error
 */
 
-bool Item_func_between::fix_fields(THD *thd, Item **ref)
-{
-  if (Item_func_opt_neg::fix_fields(thd, ref))
-    return 1;
-
-  thd->lex->current_select->between_count++;
-
-
-  return 0;
-}
-
 
 bool Item_func_between::eval_not_null_tables(uchar *opt_arg)
 {
@@ -3827,6 +3816,13 @@ cmp_item *cmp_item_datetime::make_same()
 }
 
 
+bool Item_func_in::count_sargable_conds(uchar *arg)
+{
+  ((SELECT_LEX*) arg)->cond_count++;
+  return 0;
+}
+
+
 bool Item_func_in::nulls_in_row()
 {
   Item **arg,**arg_end;
@@ -4337,7 +4333,6 @@ Item_cond::fix_fields(THD *thd, Item **ref)
     if (item->maybe_null)
       maybe_null=1;
   }
-  thd->lex->current_select->cond_count+= list.elements;
   fix_length_and_dec();
   fixed= 1;
   return FALSE;
@@ -4568,12 +4563,13 @@ void Item_cond::traverse_cond(Cond_traverser traverser,
 */
 
 void Item_cond::split_sum_func(THD *thd, Item **ref_pointer_array,
-                               List<Item> &fields)
+                               List<Item> &fields, uint flags)
 {
   List_iterator<Item> li(list);
   Item *item;
   while ((item= li++))
-    item->split_sum_func2(thd, ref_pointer_array, fields, li.ref(), TRUE);
+    item->split_sum_func2(thd, ref_pointer_array, fields, li.ref(),
+                          flags | SPLIT_SUM_SKIP_REGISTERED);
 }
 
 
@@ -4729,6 +4725,13 @@ Item *and_expressions(Item *a, Item *b, Item **org_item)
 }
 
 
+bool Item_func_null_predicate::count_sargable_conds(uchar *arg)
+{
+  ((SELECT_LEX*) arg)->cond_count++;
+  return 0;
+}
+
+
 longlong Item_func_isnull::val_int()
 {
   DBUG_ASSERT(fixed == 1);
@@ -4781,6 +4784,13 @@ void Item_func_isnotnull::print(String *str, enum_query_type query_type)
 }
 
 
+bool Item_bool_func2::count_sargable_conds(uchar *arg)
+{
+  ((SELECT_LEX*) arg)->cond_count++;
+  return 0;
+}
+
+
 longlong Item_func_like::val_int()
 {
   DBUG_ASSERT(fixed == 1);
@@ -4810,22 +4820,21 @@ longlong Item_func_like::val_int()
   We can optimize a where if first character isn't a wildcard
 */
 
-Item_func::optimize_type Item_func_like::select_optimize() const
+bool Item_func_like::with_sargable_pattern() const
 {
   if (!args[1]->const_item() || args[1]->is_expensive())
-    return OPTIMIZE_NONE;
+    return false;
 
   String* res2= args[1]->val_str((String *) &cmp_value2);
   if (!res2)
-    return OPTIMIZE_NONE;
+    return false;
 
   if (!res2->length()) // Can optimize empty wildcard: column LIKE ''
-    return OPTIMIZE_OP;
+    return true;
 
   DBUG_ASSERT(res2->ptr());
   char first= res2->ptr()[0];
-  return (first == wild_many || first == wild_one) ?
-    OPTIMIZE_NONE : OPTIMIZE_OP;
+  return first != wild_many && first != wild_one;
 }
 
 
@@ -5051,10 +5060,67 @@ bool Regexp_processor_pcre::compile(Item *item, bool send_error)
 }
 
 
+/**
+  Send a warning explaining an error code returned by pcre_exec().
+*/
+void Regexp_processor_pcre::pcre_exec_warn(int rc) const
+{
+  char buf[64];
+  const char *errmsg= NULL;
+  THD *thd= current_thd;
+
+  /*
+    Make a descriptive message only for those pcre_exec() error codes
+    that can actually happen in MariaDB.
+  */
+  switch (rc)
+  {
+  case PCRE_ERROR_NOMEMORY:
+    errmsg= "pcre_exec: Out of memory";
+    break;
+  case PCRE_ERROR_BADUTF8:
+    errmsg= "pcre_exec: Invalid utf8 byte sequence in the subject string";
+    break;
+  case PCRE_ERROR_RECURSELOOP:
+    errmsg= "pcre_exec: Recursion loop detected";
+    break;
+  default:
+    /*
+      As other error codes should normally not happen,
+      we just report the error code without textual description
+      of the code.
+    */
+    my_snprintf(buf, sizeof(buf), "pcre_exec: Internal error (%d)", rc);
+    errmsg= buf;
+  }
+  push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
+                      ER_REGEXP_ERROR, ER_THD(thd, ER_REGEXP_ERROR), errmsg);
+}
+
+
+/**
+  Call pcre_exec() and send a warning if pcre_exec() returned with an error.
+*/
+int Regexp_processor_pcre::pcre_exec_with_warn(const pcre *code,
+                                               const pcre_extra *extra,
+                                               const char *subject,
+                                               int length, int startoffset,
+                                               int options, int *ovector,
+                                               int ovecsize)
+{
+  int rc= pcre_exec(code, extra, subject, length,
+                    startoffset, options, ovector, ovecsize);
+  DBUG_EXECUTE_IF("pcre_exec_error_123", rc= -123;);
+  if (rc < PCRE_ERROR_NOMATCH)
+    pcre_exec_warn(rc);
+  return rc;
+}
+
+
 bool Regexp_processor_pcre::exec(const char *str, int length, int offset)
 {
-  m_pcre_exec_rc= pcre_exec(m_pcre, NULL, str, length,
-                            offset, 0, m_SubStrVec, m_subpatterns_needed * 3);
+  m_pcre_exec_rc= pcre_exec_with_warn(m_pcre, NULL, str, length, offset, 0,
+                                      m_SubStrVec, m_subpatterns_needed * 3);
   return false;
 }
 
@@ -5064,8 +5130,10 @@ bool Regexp_processor_pcre::exec(String *str, int offset,
 {
   if (!(str= convert_if_needed(str, &subject_converter)))
     return true;
-  m_pcre_exec_rc= pcre_exec(m_pcre, NULL, str->c_ptr_safe(), str->length(),
-                            offset, 0, m_SubStrVec, m_subpatterns_needed * 3);
+  m_pcre_exec_rc= pcre_exec_with_warn(m_pcre, NULL,
+                                      str->c_ptr_safe(), str->length(),
+                                      offset, 0,
+                                      m_SubStrVec, m_subpatterns_needed * 3);
   if (m_pcre_exec_rc > 0)
   {
     uint i;
@@ -5638,7 +5706,6 @@ Item_equal::Item_equal(THD *thd_arg, Item *f1, Item *f2, bool with_const_item)
   equal_items.push_back(f2, thd_arg->mem_root);
   compare_as_dates= with_const_item && f2->cmp_type() == TIME_RESULT;
   upper_levels= NULL;
-  sargable= TRUE; 
 }
 
 
@@ -5669,7 +5736,6 @@ Item_equal::Item_equal(THD *thd_arg, Item_equal *item_equal)
   compare_as_dates= item_equal->compare_as_dates;
   cond_false= item_equal->cond_false;
   upper_levels= item_equal->upper_levels;
-  sargable= TRUE;
 }
 
 

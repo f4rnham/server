@@ -17,7 +17,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /*
-  Because of the function new_field() all field classes that have static
+  Because of the function make_new_field() all field classes that have static
   variables must declare the size_of() member function.
 */
 
@@ -40,7 +40,7 @@ class Field;
 class Column_statistics;
 class Column_statistics_collected;
 class Item_func;
-class Item_bool_func2;
+class Item_bool_func;
 
 enum enum_check_fields
 {
@@ -518,6 +518,11 @@ public:
 
   virtual int reset(void) { bzero(ptr,pack_length()); return 0; }
   virtual void reset_fields() {}
+  const uchar *ptr_in_record(const uchar *record) const
+  {
+    my_ptrdiff_t l_offset= (my_ptrdiff_t) (record -  table->record[0]);
+    return ptr + l_offset;
+  }
   virtual void set_default()
   {
     my_ptrdiff_t l_offset= (my_ptrdiff_t) (table->s->default_values -
@@ -727,7 +732,8 @@ public:
     null_bit= p_null_bit;
   }
 
-  inline THD *get_thd() const { return table ? table->in_use : current_thd; }
+  inline THD *get_thd() const
+  { return likely(table) ? table->in_use : current_thd; }
 
   enum {
     LAST_NULL_BYTE_UNDEF= 0
@@ -760,8 +766,8 @@ public:
   virtual void sort_string(uchar *buff,uint length)=0;
   virtual bool optimize_range(uint idx, uint part);
   virtual void free() {}
-  virtual Field *new_field(MEM_ROOT *root, TABLE *new_table,
-                           bool keep_type);
+  virtual Field *make_new_field(MEM_ROOT *root, TABLE *new_table,
+                                bool keep_type);
   virtual Field *new_key_field(MEM_ROOT *root, TABLE *new_table,
                                uchar *new_ptr, uint32 length,
                                uchar *new_null_ptr, uint new_null_bit);
@@ -895,14 +901,32 @@ public:
   virtual int set_time() { return 1; }
   bool set_warning(Sql_condition::enum_warning_level, unsigned int code,
                    int cuted_increment) const;
+protected:
+  bool set_warning(unsigned int code, int cuted_increment) const
+  {
+    return set_warning(Sql_condition::WARN_LEVEL_WARN, code, cuted_increment);
+  }
+  bool set_note(unsigned int code, int cuted_increment) const
+  {
+    return set_warning(Sql_condition::WARN_LEVEL_NOTE, code, cuted_increment);
+  }
   void set_datetime_warning(Sql_condition::enum_warning_level, uint code, 
                             const ErrConv *str, timestamp_type ts_type,
                             int cuted_increment) const;
+  void set_datetime_warning(uint code,
+                            const ErrConv *str, timestamp_type ts_type,
+                            int cuted_increment) const
+  {
+    set_datetime_warning(Sql_condition::WARN_LEVEL_WARN, code, str, ts_type,
+                         cuted_increment);
+  }
+  void set_warning_truncated_wrong_value(const char *type, const char *value);
   inline bool check_overflow(int op_result)
   {
     return (op_result == E_DEC_OVERFLOW);
   }
   int warn_if_overflow(int op_result);
+public:
   void set_table_name(String *alias)
   {
     table_name= &alias->Ptr;
@@ -964,6 +988,15 @@ public:
     flags |= (column_format_arg << FIELD_FLAGS_COLUMN_FORMAT);
   }
 
+  /*
+    Validate a non-null field value stored in the given record
+    according to the current thread settings, e.g. sql_mode.
+    @param thd     - the thread
+    @param record  - the record to check in
+  */
+  virtual bool validate_value_in_record(THD *thd, const uchar *record) const
+  { return false; }
+  bool validate_value_in_record_with_warn(THD *thd, const uchar *record);
   key_map get_possible_keys();
 
   /* Hash value */
@@ -986,7 +1019,7 @@ public:
   {
     return can_optimize_keypart_ref(cond, item);
   }
-  virtual bool can_optimize_group_min_max(const Item_bool_func2 *cond,
+  virtual bool can_optimize_group_min_max(const Item_bool_func *cond,
                                           const Item *const_item) const;
   bool can_optimize_outer_join_table_elimination(const Item_func *cond,
                                                  const Item *item) const
@@ -1191,7 +1224,7 @@ public:
   bool match_collation_to_optimize_range() const { return true; }
   bool can_optimize_keypart_ref(const Item_func *cond, const Item *item) const;
   bool can_optimize_hash_join(const Item_func *cond, const Item *item) const;
-  bool can_optimize_group_min_max(const Item_bool_func2 *cond,
+  bool can_optimize_group_min_max(const Item_bool_func *cond,
                                   const Item *const_item) const;
 };
 
@@ -1625,7 +1658,7 @@ public:
     DBUG_ASSERT(0);
     return false;
   }
-  bool can_optimize_group_min_max(const Item_bool_func2 *cond,
+  bool can_optimize_group_min_max(const Item_bool_func *cond,
                                   const Item *const_item) const
   {
     DBUG_ASSERT(0);
@@ -1664,7 +1697,7 @@ public:
     return pos_in_interval_val_real(min, max);
   }
   bool can_optimize_keypart_ref(const Item_func *cond, const Item *item) const;
-  bool can_optimize_group_min_max(const Item_bool_func2 *cond,
+  bool can_optimize_group_min_max(const Item_bool_func *cond,
                                   const Item *const_item) const;
 };
 
@@ -1681,12 +1714,14 @@ protected:
   int store_TIME_with_warning(MYSQL_TIME *ltime, const ErrConv *str,
                               int was_cut, int have_smth_to_conv);
   virtual void store_TIME(MYSQL_TIME *ltime) = 0;
-  bool validate_for_get_date(bool not_zero_date, const MYSQL_TIME *ltime,
-                             ulonglong fuzzydate) const
+  virtual bool get_TIME(MYSQL_TIME *ltime, const uchar *pos,
+                        ulonglong fuzzydate) const = 0;
+  bool validate_MMDD(bool not_zero_date, uint month, uint day,
+                     ulonglong fuzzydate) const
   {
     if (!not_zero_date)
       return fuzzydate & TIME_NO_ZERO_DATE;
-    if (!ltime->month || !ltime->day)
+    if (!month || !day)
       return fuzzydate & TIME_NO_ZERO_IN_DATE;
     return false;
   }
@@ -1703,6 +1738,7 @@ public:
   int  store(longlong nr, bool unsigned_val);
   int  store_time_dec(MYSQL_TIME *ltime, uint dec);
   int  store_decimal(const my_decimal *);
+  bool validate_value_in_record(THD *thd, const uchar *record) const;
 };
 
 
@@ -1755,7 +1791,11 @@ public:
     return res;
   }
   /* Get TIMESTAMP field value as seconds since begging of Unix Epoch */
-  virtual my_time_t get_timestamp(ulong *sec_part) const;
+  virtual my_time_t get_timestamp(const uchar *pos, ulong *sec_part) const;
+  my_time_t get_timestamp(ulong *sec_part) const
+  {
+    return get_timestamp(ptr, sec_part);
+  }
   virtual void store_TIME(my_time_t timestamp, ulong sec_part)
   {
     int4store(ptr,timestamp);
@@ -1771,6 +1811,7 @@ public:
   {
     return unpack_int32(to, from, from_end);
   }
+  bool validate_value_in_record(THD *thd, const uchar *record) const;
   uint size_of() const { return sizeof(*this); }
 };
 
@@ -1828,7 +1869,7 @@ public:
   {
     DBUG_ASSERT(dec);
   }
-  my_time_t get_timestamp(ulong *sec_part) const;
+  my_time_t get_timestamp(const uchar *pos, ulong *sec_part) const;
   void store_TIME(my_time_t timestamp, ulong sec_part);
   int cmp(const uchar *,const uchar *);
   uint32 pack_length() const;
@@ -1872,7 +1913,7 @@ public:
     return memcmp(a_ptr, b_ptr, pack_length());
   }
   void store_TIME(my_time_t timestamp, ulong sec_part);
-  my_time_t get_timestamp(ulong *sec_part) const;
+  my_time_t get_timestamp(const uchar *pos, ulong *sec_part) const;
   uint size_of() const { return sizeof(*this); }
 };
 
@@ -1902,6 +1943,7 @@ public:
 
 class Field_date :public Field_temporal_with_date {
   void store_TIME(MYSQL_TIME *ltime);
+  bool get_TIME(MYSQL_TIME *ltime, const uchar *pos, ulonglong fuzzydate) const;
 public:
   Field_date(uchar *ptr_arg, uchar *null_ptr_arg, uchar null_bit_arg,
 	     enum utype unireg_check_arg, const char *field_name_arg)
@@ -1910,6 +1952,8 @@ public:
   enum_field_types type() const { return MYSQL_TYPE_DATE;}
   enum ha_base_keytype key_type() const { return HA_KEYTYPE_ULONG_INT; }
   int reset(void) { ptr[0]=ptr[1]=ptr[2]=ptr[3]=0; return 0; }
+  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+  { return Field_date::get_TIME(ltime, ptr, fuzzydate); }
   double val_real(void);
   longlong val_int(void);
   String *val_str(String*,String *);
@@ -1934,6 +1978,7 @@ public:
 
 class Field_newdate :public Field_temporal_with_date {
   void store_TIME(MYSQL_TIME *ltime);
+  bool get_TIME(MYSQL_TIME *ltime, const uchar *pos, ulonglong fuzzydate) const;
 public:
   Field_newdate(uchar *ptr_arg, uchar *null_ptr_arg, uchar null_bit_arg,
 		enum utype unireg_check_arg, const char *field_name_arg)
@@ -1952,7 +1997,8 @@ public:
   void sort_string(uchar *buff,uint length);
   uint32 pack_length() const { return 3; }
   void sql_type(String &str) const;
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate);
+  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+  { return Field_newdate::get_TIME(ltime, ptr, fuzzydate); }
   uint size_of() const { return sizeof(*this); }
 };
 
@@ -2103,6 +2149,7 @@ public:
 
 class Field_datetime :public Field_temporal_with_date {
   void store_TIME(MYSQL_TIME *ltime);
+  bool get_TIME(MYSQL_TIME *ltime, const uchar *pos, ulonglong fuzzydate) const;
 public:
   Field_datetime(uchar *ptr_arg, uint length_arg, uchar *null_ptr_arg,
                  uchar null_bit_arg, enum utype unireg_check_arg,
@@ -2120,7 +2167,8 @@ public:
   void sort_string(uchar *buff,uint length);
   uint32 pack_length() const { return 8; }
   void sql_type(String &str) const;
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate);
+  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+  { return Field_datetime::get_TIME(ltime, ptr, fuzzydate); }
   virtual int set_time();
   virtual void set_default()
   {
@@ -2200,6 +2248,7 @@ public:
 */
 class Field_datetime_hires :public Field_datetime_with_dec {
   void store_TIME(MYSQL_TIME *ltime);
+  bool get_TIME(MYSQL_TIME *ltime, const uchar *pos, ulonglong fuzzydate) const;
 public:
   Field_datetime_hires(uchar *ptr_arg, uchar *null_ptr_arg,
                        uchar null_bit_arg, enum utype unireg_check_arg,
@@ -2211,7 +2260,8 @@ public:
   }
   int cmp(const uchar *,const uchar *);
   uint32 pack_length() const;
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate);
+  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+  { return Field_datetime_hires::get_TIME(ltime, ptr, fuzzydate); }
   uint size_of() const { return sizeof(*this); }
 };
 
@@ -2221,6 +2271,7 @@ public:
 */
 class Field_datetimef :public Field_datetime_with_dec {
   void store_TIME(MYSQL_TIME *ltime);
+  bool get_TIME(MYSQL_TIME *ltime, const uchar *pos, ulonglong fuzzydate) const;
   int do_save_field_metadata(uchar *metadata_ptr)
   {
     *metadata_ptr= decimals();
@@ -2251,7 +2302,8 @@ public:
     return memcmp(a_ptr, b_ptr, pack_length());
   }
   int reset();
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate);
+  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+  { return Field_datetimef::get_TIME(ltime, ptr, fuzzydate); }
   uint size_of() const { return sizeof(*this); }
 };
 
@@ -2364,7 +2416,7 @@ public:
   enum_field_types real_type() const { return MYSQL_TYPE_STRING; }
   bool has_charset(void) const
   { return charset() == &my_charset_bin ? FALSE : TRUE; }
-  Field *new_field(MEM_ROOT *root, TABLE *new_table, bool keep_type);
+  Field *make_new_field(MEM_ROOT *root, TABLE *new_table, bool keep_type);
   virtual uint get_key_image(uchar *buff,uint length, imagetype type);
 private:
   int do_save_field_metadata(uchar *first_byte);
@@ -2442,7 +2494,7 @@ public:
   enum_field_types real_type() const { return MYSQL_TYPE_VARCHAR; }
   bool has_charset(void) const
   { return charset() == &my_charset_bin ? FALSE : TRUE; }
-  Field *new_field(MEM_ROOT *root, TABLE *new_table, bool keep_type);
+  Field *make_new_field(MEM_ROOT *root, TABLE *new_table, bool keep_type);
   Field *new_key_field(MEM_ROOT *root, TABLE *new_table,
                        uchar *new_ptr, uint32 length,
                        uchar *new_null_ptr, uint new_null_bit);
@@ -2661,6 +2713,7 @@ public:
   int reset(void) { return Field_blob::reset() || !maybe_null(); }
 
   geometry_type get_geometry_type() { return geom_type; };
+  static geometry_type geometry_type_merge(geometry_type, geometry_type);
   uint get_srid() { return srid; }
 };
 
@@ -2688,7 +2741,7 @@ public:
   {
       flags|=ENUM_FLAG;
   }
-  Field *new_field(MEM_ROOT *root, TABLE *new_table, bool keep_type);
+  Field *make_new_field(MEM_ROOT *root, TABLE *new_table, bool keep_type);
   enum_field_types type() const { return MYSQL_TYPE_STRING; }
   enum Item_result cmp_type () const { return INT_RESULT; }
   enum ha_base_keytype key_type() const;
@@ -2721,7 +2774,7 @@ public:
                               const uchar *from_end, uint param_data);
 
   bool can_optimize_keypart_ref(const Item_func *cond, const Item *item) const;
-  bool can_optimize_group_min_max(const Item_bool_func2 *cond,
+  bool can_optimize_group_min_max(const Item_bool_func *cond,
                                   const Item *const_item) const
   {
     /*

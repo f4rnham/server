@@ -200,7 +200,8 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 
   if (escaped->length() > 1 || enclosed->length() > 1)
   {
-    my_message(ER_WRONG_FIELD_TERMINATORS,ER(ER_WRONG_FIELD_TERMINATORS),
+    my_message(ER_WRONG_FIELD_TERMINATORS,
+               ER_THD(thd, ER_WRONG_FIELD_TERMINATORS),
 	       MYF(0));
     DBUG_RETURN(TRUE);
   }
@@ -212,7 +213,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   {
     push_warning(thd, Sql_condition::WARN_LEVEL_WARN,
                  WARN_NON_ASCII_SEPARATOR_NOT_IMPLEMENTED,
-                 ER(WARN_NON_ASCII_SEPARATOR_NOT_IMPLEMENTED));
+                 ER_THD(thd, WARN_NON_ASCII_SEPARATOR_NOT_IMPLEMENTED));
   } 
 
   if (open_and_lock_tables(thd, table_list, TRUE, 0))
@@ -323,7 +324,8 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   }
   if (use_blobs && !ex->line_term->length() && !field_term->length())
   {
-    my_message(ER_BLOBS_AND_NO_TERMINATED,ER(ER_BLOBS_AND_NO_TERMINATED),
+    my_message(ER_BLOBS_AND_NO_TERMINATED,
+               ER_THD(thd, ER_BLOBS_AND_NO_TERMINATED),
 	       MYF(0));
     DBUG_RETURN(TRUE);
   }
@@ -477,7 +479,12 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     thd->abort_on_warning= !ignore && thd->is_strict_mode();
 
     thd_progress_init(thd, 2);
-    if (ex->filetype == FILETYPE_XML) /* load xml */
+    if (table_list->table->validate_default_values_of_unset_fields(thd))
+    {
+      read_info.error= true;
+      error= 1;
+    }
+    else if (ex->filetype == FILETYPE_XML) /* load xml */
       error= read_xml_field(thd, info, table_list, fields_vars,
                             set_fields, set_values, read_info,
                             *(ex->line_term), skip_lines, ignore);
@@ -567,7 +574,8 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     error= -1;				// Error on read
     goto err;
   }
-  sprintf(name, ER(ER_LOAD_INFO), (ulong) info.records, (ulong) info.deleted,
+  sprintf(name, ER_THD(thd, ER_LOAD_INFO),
+          (ulong) info.records, (ulong) info.deleted,
 	  (ulong) (info.records - info.copied),
           (long) thd->get_stmt_da()->current_statement_warn_count());
 
@@ -813,7 +821,7 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
         thd->cuted_fields++;			/* Not enough fields */
         push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                             ER_WARN_TOO_FEW_RECORDS,
-                            ER(ER_WARN_TOO_FEW_RECORDS),
+                            ER_THD(thd, ER_WARN_TOO_FEW_RECORDS),
                             thd->get_stmt_da()->current_row_for_warning());
         /*
           Timestamp fields that are NOT NULL are autoupdated if there is no
@@ -843,7 +851,7 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       thd->cuted_fields++;			/* To long row */
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                           ER_WARN_TOO_MANY_RECORDS,
-                          ER(ER_WARN_TOO_MANY_RECORDS),
+                          ER_THD(thd, ER_WARN_TOO_MANY_RECORDS),
                           thd->get_stmt_da()->current_row_for_warning());
     }
 
@@ -879,7 +887,7 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       thd->cuted_fields++;			/* To long row */
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                           ER_WARN_TOO_MANY_RECORDS,
-                          ER(ER_WARN_TOO_MANY_RECORDS),
+                          ER_THD(thd, ER_WARN_TOO_MANY_RECORDS),
                           thd->get_stmt_da()->current_row_for_warning());
     }
     thd->get_stmt_da()->inc_current_row_for_warning();
@@ -1056,7 +1064,7 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
           thd->cuted_fields++;
           push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                               ER_WARN_TOO_FEW_RECORDS,
-                              ER(ER_WARN_TOO_FEW_RECORDS),
+                              ER_THD(thd, ER_WARN_TOO_FEW_RECORDS),
                               thd->get_stmt_da()->current_row_for_warning());
         }
         else if (item->type() == Item::STRING_ITEM)
@@ -1102,7 +1110,8 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
     {
       thd->cuted_fields++;			/* To long row */
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
-                          ER_WARN_TOO_MANY_RECORDS, ER(ER_WARN_TOO_MANY_RECORDS),
+                          ER_WARN_TOO_MANY_RECORDS,
+                          ER_THD(thd, ER_WARN_TOO_MANY_RECORDS),
                           thd->get_stmt_da()->current_row_for_warning());
       if (thd->killed)
         DBUG_RETURN(1);
@@ -1243,7 +1252,7 @@ read_xml_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
           thd->cuted_fields++;
           push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                               ER_WARN_TOO_FEW_RECORDS,
-                              ER(ER_WARN_TOO_FEW_RECORDS),
+                              ER_THD(thd, ER_WARN_TOO_FEW_RECORDS),
                               thd->get_stmt_da()->current_row_for_warning());
         }
         else

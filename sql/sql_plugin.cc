@@ -215,7 +215,7 @@ static struct
 
 /* support for Services */
 
-#include "sql_plugin_services.h"
+#include "sql_plugin_services.ic"
 
 /*
   A mutex LOCK_plugin must be acquired before accessing the
@@ -738,7 +738,7 @@ static st_plugin_dl *plugin_dl_add(const LEX_STRING *dl, int report)
     plugin directory are used (to make this even remotely secure).
   */
   if (check_valid_path(dl->str, dl->length) ||
-      check_string_char_length((LEX_STRING *) dl, "", NAME_CHAR_LEN,
+      check_string_char_length((LEX_STRING *) dl, 0, NAME_CHAR_LEN,
                                system_charset_info, 1) ||
       plugin_dir_len + dl->length + 1 >= FN_REFLEN)
   {
@@ -1252,7 +1252,7 @@ static void plugin_del(struct st_plugin_int *plugin)
 
 static void reap_plugins(void)
 {
-  uint count, idx;
+  uint count;
   struct st_plugin_int *plugin, **reap, **list;
 
   mysql_mutex_assert_owner(&LOCK_plugin);
@@ -1265,14 +1265,18 @@ static void reap_plugins(void)
   reap= (struct st_plugin_int **)my_alloca(sizeof(plugin)*(count+1));
   *(reap++)= NULL;
 
-  for (idx= 0; idx < count; idx++)
+  for (uint i=0; i < MYSQL_MAX_PLUGIN_TYPE_NUM; i++)
   {
-    plugin= *dynamic_element(&plugin_array, idx, struct st_plugin_int **);
-    if (plugin->state == PLUGIN_IS_DELETED && !plugin->ref_count)
+    HASH *hash= plugin_hash + plugin_type_initialization_order[i];
+    for (uint j= 0; j < hash->records; j++)
     {
-      /* change the status flag to prevent reaping by another thread */
-      plugin->state= PLUGIN_IS_DYING;
-      *(reap++)= plugin;
+      plugin= (struct st_plugin_int *) my_hash_element(hash, j);
+      if (plugin->state == PLUGIN_IS_DELETED && !plugin->ref_count)
+      {
+        /* change the status flag to prevent reaping by another thread */
+        plugin->state= PLUGIN_IS_DYING;
+        *(reap++)= plugin;
+      }
     }
   }
 
@@ -1814,7 +1818,8 @@ static void plugin_load(MEM_ROOT *tmp_root)
     mysql_mutex_unlock(&LOCK_plugin);
   }
   if (error > 0)
-    sql_print_error(ER(ER_GET_ERRNO), my_errno, table->file->table_type());
+    sql_print_error(ER_THD(new_thd, ER_GET_ERRNO), my_errno,
+                           table->file->table_type());
   end_read_record(&read_record_info);
   table->m_needs_reopen= TRUE;                  // Force close to free memory
   close_mysql_tables(new_thd);
@@ -2065,7 +2070,8 @@ static bool finalize_install(THD *thd, TABLE *table, const LEX_STRING *name,
   {
     if (global_system_variables.log_warnings)
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
-                          ER_CANT_INITIALIZE_UDF, ER(ER_CANT_INITIALIZE_UDF),
+                          ER_CANT_INITIALIZE_UDF,
+                          ER_THD(thd, ER_CANT_INITIALIZE_UDF),
                           name->str, "Plugin is disabled");
   }
 
@@ -2198,7 +2204,7 @@ static bool do_uninstall(THD *thd, TABLE *table, const LEX_STRING *name)
   plugin->state= PLUGIN_IS_DELETED;
   if (plugin->ref_count)
     push_warning(thd, Sql_condition::WARN_LEVEL_WARN,
-                 WARN_PLUGIN_BUSY, ER(WARN_PLUGIN_BUSY));
+                 WARN_PLUGIN_BUSY, ER_THD(thd, WARN_PLUGIN_BUSY));
   else
     reap_needed= true;
 
@@ -3359,9 +3365,9 @@ bool sys_var_pluginvar::session_is_default(THD *thd)
     }
   case PLUGIN_VAR_DOUBLE:
     return getopt_ulonglong2double(option.def_value) == *(double*)value;
-  default:
-    DBUG_ASSERT(0);
   }
+  DBUG_ASSERT(0);
+  return 0;
 }
 
 

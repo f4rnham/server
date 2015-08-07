@@ -3338,7 +3338,7 @@ sub do_before_run_mysqltest($)
     my $resdir= dirname($resfile);
     # we'll use a separate extension for generated result files
     # to be able to distinguish them from manually created
-    # version-controlled results, and to ignore them in bzr.
+    # version-controlled results, and to ignore them in git.
     my $dest = "$base_file$suites.result~";
     my @cmd = ($exe_patch, qw/--binary -r - -f -s -o/,
                $dest, $base_result, $resfile);
@@ -6028,6 +6028,8 @@ Options to control what test suites or cases to run
   skip-test-list=FILE   Skip the tests listed in FILE. Each line in the file
                         is an entry and should be formatted as: 
                         <TESTNAME> : <COMMENT>
+  force-restart         Always restart servers between tests. This makes it
+                        easier to see from which test warnings may come from.
 
 Options that specify ports
 
@@ -6145,7 +6147,6 @@ Misc options
                         servers to exit before finishing the process
   fast                  Run as fast as possible, dont't wait for servers
                         to shutdown etc.
-  force-restart         Always restart servers between tests
   parallel=N            Run tests in N parallel threads (default 1)
                         Use parallel=auto for auto-setting of N
   repeat=N              Run each test N number of times

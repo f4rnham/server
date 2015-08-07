@@ -1,5 +1,5 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates.
-   Copyright (c) 2009, 2014, SkySQL Ab.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1002,13 +1002,13 @@ public:
      failed is not available at this point. The only way for us to check is by
      reconstructing the actual error message and see if it's the same.
   */
-  char* get_view_access_denied_message() 
+  char* get_view_access_denied_message(THD *thd) 
   {
     if (!m_view_access_denied_message_ptr)
     {
       m_view_access_denied_message_ptr= m_view_access_denied_message;
       my_snprintf(m_view_access_denied_message, MYSQL_ERRMSG_SIZE,
-                  ER(ER_TABLEACCESS_DENIED_ERROR), "SHOW VIEW",
+                  ER_THD(thd, ER_TABLEACCESS_DENIED_ERROR), "SHOW VIEW",
                   m_sctx->priv_user,
                   m_sctx->host_or_ip, m_top_view->get_table_name());
     }
@@ -1033,7 +1033,7 @@ public:
     switch (sql_errno)
     {
     case ER_TABLEACCESS_DENIED_ERROR:
-      if (!strcmp(get_view_access_denied_message(), message))
+      if (!strcmp(get_view_access_denied_message(thd), message))
       {
         /* Access to top view is not granted, don't interfere. */
         is_handled= FALSE;
@@ -1053,7 +1053,7 @@ public:
          are missing. */
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN, 
                           ER_VIEW_INVALID,
-                          ER(ER_VIEW_INVALID),
+                          ER_THD(thd, ER_VIEW_INVALID),
                           m_top_view->get_db_name(),
                           m_top_view->get_table_name());
       is_handled= TRUE;
@@ -1228,7 +1228,7 @@ bool mysqld_show_create_db(THD *thd, LEX_STRING *dbname,
     status_var_increment(thd->status_var.access_denied_errors);
     my_error(ER_DBACCESS_DENIED_ERROR, MYF(0),
              sctx->priv_user, sctx->host_or_ip, dbname->str);
-    general_log_print(thd,COM_INIT_DB,ER(ER_DBACCESS_DENIED_ERROR),
+    general_log_print(thd,COM_INIT_DB,ER_THD(thd, ER_DBACCESS_DENIED_ERROR),
                       sctx->priv_user, sctx->host_or_ip, orig_dbname->str);
     DBUG_RETURN(TRUE);
   }
@@ -2375,7 +2375,8 @@ void mysqld_list_processes(THD *thd,const char *user, bool verbose)
     Security_context *tmp_sctx= tmp->security_ctx;
     struct st_my_thread_var *mysys_var;
     if ((tmp->vio_ok() || tmp->system_thread) &&
-        (!user || (tmp_sctx->user && !strcmp(tmp_sctx->user, user))))
+        (!user || (!tmp->system_thread &&
+                   tmp_sctx->user && !strcmp(tmp_sctx->user, user))))
     {
       thread_info *thd_info= new thread_info;
 
@@ -2459,7 +2460,7 @@ void mysqld_list_processes(THD *thd,const char *user, bool verbose)
     else
       protocol->store(command_name[thd_info->command].str, system_charset_info);
     if (thd_info->start_time && now > thd_info->start_time)
-      protocol->store_long(now - thd_info->start_time);
+      protocol->store_long((now - thd_info->start_time) / HRTIME_RESOLUTION);
     else
       protocol->store_null();
     protocol->store(thd_info->state_info, system_charset_info);
@@ -2756,7 +2757,8 @@ int fill_schema_processlist(THD* thd, TABLE_LIST* tables, COND* cond)
       ulonglong max_counter;
 
       if ((!tmp->vio_ok() && !tmp->system_thread) ||
-          (user && (!tmp_sctx->user || strcmp(tmp_sctx->user, user))))
+          (user && (tmp->system_thread || !tmp_sctx->user ||
+                    strcmp(tmp_sctx->user, user))))
         continue;
 
       restore_record(table, s->default_values);
@@ -4359,7 +4361,7 @@ static int fill_schema_table_from_frm(THD *thd, TABLE_LIST *tables,
 
     push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                         ER_WARN_I_S_SKIPPED_TABLE,
-                        ER(ER_WARN_I_S_SKIPPED_TABLE),
+                        ER_THD(thd, ER_WARN_I_S_SKIPPED_TABLE),
                         table_list.db, table_list.table_name);
     return 0;
   }
@@ -7911,15 +7913,28 @@ bool get_schema_tables_result(JOIN *join,
     TABLE_LIST *table_list= tab->table->pos_in_table_list;
     if (table_list->schema_table && thd->fill_information_schema_tables())
     {
-      bool is_subselect= (&lex->unit != lex->current_select->master_unit() &&
-                          lex->current_select->master_unit()->item);
+      /*
+        Note, currently I_S tables are filled once per query.
+        This needs to be changed if if make_cond_for_info_schema()
+        will preserve outer fields (and thus I_S content will depend on
+        the outer subquery) - in this new case I_S tables will need to
+        be re-populated here.
+
+        And in that case, get_all_tables() might be called O(N^2) times
+        (in self-join of TABLES, for example) and it will allocate
+        table names on THD::mem_root O(N^2) times. To fix it, get_all_tables
+        needs to be fixed to use a local memroot, that is reset or destroyed
+        between get_all_tables invocations. Or fixed not to allocate
+        table names on THD::memroot if these names don't satisfy lookup_field
+      */
+      const bool is_subselect= false;
 
       /* A value of 0 indicates a dummy implementation */
       if (table_list->schema_table->fill_table == 0)
         continue;
 
       /* skip I_S optimizations specific to get_all_tables */
-      if (thd->lex->describe &&
+      if (lex->describe &&
           (table_list->schema_table->fill_table != get_all_tables))
         continue;
 
@@ -7952,7 +7967,6 @@ bool get_schema_tables_result(JOIN *join,
       }
       else
         table_list->table->file->stats.records= 0;
-
   
       Item *cond= tab->select_cond;
       if (tab->cache_select && tab->cache_select->cond)
@@ -8605,7 +8619,7 @@ ST_FIELD_INFO variables_fields_info[]=
 {
   {"VARIABLE_NAME", 64, MYSQL_TYPE_STRING, 0, 0, "Variable_name",
    SKIP_OPEN_TABLE},
-  {"VARIABLE_VALUE", 1024, MYSQL_TYPE_STRING, 0, 0, "Value", SKIP_OPEN_TABLE},
+  {"VARIABLE_VALUE", 2048, MYSQL_TYPE_STRING, 0, 0, "Value", SKIP_OPEN_TABLE},
   {0, 0, MYSQL_TYPE_STRING, 0, 0, 0, SKIP_OPEN_TABLE}
 };
 
@@ -8613,10 +8627,10 @@ ST_FIELD_INFO variables_fields_info[]=
 ST_FIELD_INFO sysvars_fields_info[]=
 {
   {"VARIABLE_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
-  {"SESSION_VALUE", 1024, MYSQL_TYPE_STRING, 0, MY_I_S_MAYBE_NULL, 0, 0},
-  {"GLOBAL_VALUE", 1024, MYSQL_TYPE_STRING, 0, MY_I_S_MAYBE_NULL, 0, 0},
+  {"SESSION_VALUE", 2048, MYSQL_TYPE_STRING, 0, MY_I_S_MAYBE_NULL, 0, 0},
+  {"GLOBAL_VALUE", 2048, MYSQL_TYPE_STRING, 0, MY_I_S_MAYBE_NULL, 0, 0},
   {"GLOBAL_VALUE_ORIGIN", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
-  {"DEFAULT_VALUE", 1024, MYSQL_TYPE_STRING, 0, MY_I_S_MAYBE_NULL, 0, 0},
+  {"DEFAULT_VALUE", 2048, MYSQL_TYPE_STRING, 0, MY_I_S_MAYBE_NULL, 0, 0},
   {"VARIABLE_SCOPE", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
   {"VARIABLE_TYPE", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
   {"VARIABLE_COMMENT", TABLE_COMMENT_MAXLEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},

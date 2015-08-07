@@ -872,10 +872,29 @@ bool mysql_insert(THD *thd,TABLE_LIST *table_list,
 
   table->reset_default_fields();
 
+  if (fields.elements || !value_count)
+  {
+    /*
+      There are possibly some default values:
+      INSERT INTO t1 (fields) VALUES ...
+      INSERT INTO t1 VALUES ()
+    */
+    if (table->validate_default_values_of_unset_fields(thd))
+    {
+      error= 1;
+      goto values_loop_end;
+    }
+  }
+
   while ((values= its++))
   {
     if (fields.elements || !value_count)
     {
+      /*
+        There are possibly some default values:
+        INSERT INTO t1 (fields) VALUES ...
+        INSERT INTO t1 VALUES ()
+      */
       restore_record(table,s->default_values);	// Get empty record
       if (fill_record_n_invoke_before_triggers(thd, table, fields, *values, 0,
                                                TRG_EVENT_INSERT))
@@ -896,6 +915,10 @@ bool mysql_insert(THD *thd,TABLE_LIST *table_list,
     }
     else
     {
+      /*
+        No field list, all fields are set explicitly:
+        INSERT INTO t1 VALUES (values)
+      */
       if (thd->lex->used_tables)		      // Column used in values()
 	restore_record(table,s->default_values);	// Get empty record
       else
@@ -967,6 +990,7 @@ bool mysql_insert(THD *thd,TABLE_LIST *table_list,
     thd->get_stmt_da()->inc_current_row_for_warning();
   }
 
+values_loop_end:
   free_underlaid_joins(thd, &thd->lex->select_lex);
   joins_freed= TRUE;
 
@@ -1125,12 +1149,12 @@ bool mysql_insert(THD *thd,TABLE_LIST *table_list,
     ha_rows updated=((thd->client_capabilities & CLIENT_FOUND_ROWS) ?
                      info.touched : info.updated);
     if (ignore)
-      sprintf(buff, ER(ER_INSERT_INFO), (ulong) info.records,
+      sprintf(buff, ER_THD(thd, ER_INSERT_INFO), (ulong) info.records,
 	      (lock_type == TL_WRITE_DELAYED) ? (ulong) 0 :
 	      (ulong) (info.records - info.copied),
               (long) thd->get_stmt_da()->current_statement_warn_count());
     else
-      sprintf(buff, ER(ER_INSERT_INFO), (ulong) info.records,
+      sprintf(buff, ER_THD(thd, ER_INSERT_INFO), (ulong) info.records,
 	      (ulong) (info.deleted + updated),
               (long) thd->get_stmt_da()->current_statement_warn_count());
     ::my_ok(thd, info.copied + info.deleted + updated, id, buff);
@@ -1917,7 +1941,7 @@ int check_that_all_fields_are_given_values(THD *thd, TABLE *entry,
       {
         push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                             ER_NO_DEFAULT_FOR_VIEW_FIELD,
-                            ER(ER_NO_DEFAULT_FOR_VIEW_FIELD),
+                            ER_THD(thd, ER_NO_DEFAULT_FOR_VIEW_FIELD),
                             table_list->view_db.str,
                             table_list->view_name.str);
       }
@@ -1925,7 +1949,7 @@ int check_that_all_fields_are_given_values(THD *thd, TABLE *entry,
       {
         push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                             ER_NO_DEFAULT_FOR_FIELD,
-                            ER(ER_NO_DEFAULT_FOR_FIELD),
+                            ER_THD(thd, ER_NO_DEFAULT_FOR_FIELD),
                             (*field)->field_name);
       }
       err= 1;
@@ -2362,7 +2386,8 @@ TABLE *Delayed_insert::get_local_table(THD* client_thd)
         kill_delayed_threads_for_table().
       */
       if (!thd.is_error())
-        my_message(ER_QUERY_INTERRUPTED, ER(ER_QUERY_INTERRUPTED), MYF(0));
+        my_message(ER_QUERY_INTERRUPTED, ER_THD(&thd, ER_QUERY_INTERRUPTED),
+                   MYF(0));
       else
         my_message(thd.get_stmt_da()->sql_errno(),
                    thd.get_stmt_da()->message(), MYF(0));
@@ -2425,7 +2450,8 @@ TABLE *Delayed_insert::get_local_table(THD* client_thd)
   found_next_number_field= table->found_next_number_field;
   for (org_field= table->field; *org_field; org_field++, field++)
   {
-    if (!(*field= (*org_field)->new_field(client_thd->mem_root, copy, 1)))
+    if (!(*field= (*org_field)->make_new_field(client_thd->mem_root, copy,
+                                               1)))
       goto error;
     (*field)->orig_table= copy;			// Remove connection
     (*field)->move_field_offset(adjust_ptrs);	// Point at copy->record[0]
@@ -3555,6 +3581,8 @@ int select_insert::prepare2(void)
       thd->locked_tables_mode <= LTM_LOCK_TABLES &&
       !thd->lex->describe)
     table->file->ha_start_bulk_insert((ha_rows) 0);
+  if (table->validate_default_values_of_unset_fields(thd))
+    DBUG_RETURN(1);
   DBUG_RETURN(0);
 }
 
@@ -3663,14 +3691,14 @@ void select_insert::store_values(List<Item> &values)
                                          TRG_EVENT_INSERT);
 }
 
-bool select_insert::send_eof()
+bool select_insert::prepare_eof()
 {
   int error;
   bool const trans_table= table->file->has_transactions();
-  ulonglong id, row_count;
   bool changed;
   killed_state killed_status= thd->killed;
-  DBUG_ENTER("select_insert::send_eof");
+
+  DBUG_ENTER("select_insert::prepare_eof");
   DBUG_PRINT("enter", ("trans_table=%d, table_type='%s'",
                        trans_table, table->file->table_type()));
 
@@ -3721,7 +3749,7 @@ bool select_insert::send_eof()
                       trans_table, FALSE, FALSE, errcode))
     {
       table->file->ha_release_auto_increment();
-      DBUG_RETURN(1);
+      DBUG_RETURN(true);
     }
   }
   table->file->ha_release_auto_increment();
@@ -3729,31 +3757,49 @@ bool select_insert::send_eof()
   if (error)
   {
     table->file->print_error(error,MYF(0));
-    DBUG_RETURN(1);
+    DBUG_RETURN(true);
   }
 
-  if (suppress_my_ok)
-    DBUG_RETURN(0);
+  DBUG_RETURN(false);
+}
 
-  char buff[160];
+bool select_insert::send_ok_packet() {
+  char  message[160];                           /* status message */
+  ulong row_count;                              /* rows affected */
+  ulong id;                                     /* last insert-id */
+
+  DBUG_ENTER("select_insert::send_ok_packet");
+
   if (info.ignore)
-    sprintf(buff, ER(ER_INSERT_INFO), (ulong) info.records,
-	    (ulong) (info.records - info.copied),
-            (long) thd->get_stmt_da()->current_statement_warn_count());
+    my_snprintf(message, sizeof(message), ER(ER_INSERT_INFO),
+                (ulong) info.records, (ulong) (info.records - info.copied),
+                (long) thd->get_stmt_da()->current_statement_warn_count());
   else
-    sprintf(buff, ER(ER_INSERT_INFO), (ulong) info.records,
-	    (ulong) (info.deleted+info.updated),
-            (long) thd->get_stmt_da()->current_statement_warn_count());
+    my_snprintf(message, sizeof(message), ER(ER_INSERT_INFO),
+                (ulong) info.records, (ulong) (info.deleted + info.updated),
+                (long) thd->get_stmt_da()->current_statement_warn_count());
+
   row_count= info.copied + info.deleted +
-             ((thd->client_capabilities & CLIENT_FOUND_ROWS) ?
-              info.touched : info.updated);
+    ((thd->client_capabilities & CLIENT_FOUND_ROWS) ?
+     info.touched : info.updated);
+
   id= (thd->first_successful_insert_id_in_cur_stmt > 0) ?
     thd->first_successful_insert_id_in_cur_stmt :
     (thd->arg_of_last_insert_id_function ?
      thd->first_successful_insert_id_in_prev_stmt :
      (info.copied ? autoinc_value_of_last_inserted_row : 0));
-  ::my_ok(thd, row_count, id, buff);
-  DBUG_RETURN(0);
+
+  ::my_ok(thd, row_count, id, message);
+
+  DBUG_RETURN(false);
+}
+
+bool select_insert::send_eof()
+{
+  bool res;
+  DBUG_ENTER("select_insert::send_eof");
+  res= (prepare_eof() || (!suppress_my_ok && send_ok_packet()));
+  DBUG_RETURN(res);
 }
 
 void select_insert::abort_result_set() {
@@ -4228,13 +4274,13 @@ void select_create::store_values(List<Item> &values)
 
 bool select_create::send_eof()
 {
-  if (select_insert::send_eof())
+  DBUG_ENTER("select_create::send_eof");
+  if (prepare_eof())
   {
     abort_result_set();
-    return 1;
+    DBUG_RETURN(true);
   }
 
-  exit_done= 1;                                 // Avoid double calls
   /*
     Do an implicit commit at end of statement for non-temporary
     tables.  This can fail, but we should unlock the table
@@ -4255,7 +4301,7 @@ bool select_create::send_eof()
                     thd->thread_id, thd->wsrep_conflict_state, thd->query());
         mysql_mutex_unlock(&thd->LOCK_wsrep_thd);
         abort_result_set();
-	return TRUE;
+        DBUG_RETURN(true);
       }
       mysql_mutex_unlock(&thd->LOCK_wsrep_thd);
     }
@@ -4264,8 +4310,16 @@ bool select_create::send_eof()
   else if (!thd->is_current_stmt_binlog_format_row())
     table->s->table_creation_was_logged= 1;
 
+  /*
+    exit_done must only be set after last potential call to
+    abort_result_set().
+  */
+  exit_done= 1;                                 // Avoid double calls
+
   table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
   table->file->extra(HA_EXTRA_WRITE_CANNOT_REPLACE);
+
+  send_ok_packet();
 
   if (m_plock)
   {
@@ -4287,12 +4341,12 @@ bool select_create::send_eof()
                                                 create_info->
                                                 pos_in_locked_tables,
                                                 table, lock))
-        return 0;                               // ok
+        DBUG_RETURN(false);                     // ok
       /* Fail. Continue without locking the table */
     }
     mysql_unlock_tables(thd, lock);
   }
-  return 0;
+  DBUG_RETURN(false);
 }
 
 

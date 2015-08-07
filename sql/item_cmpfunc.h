@@ -122,10 +122,6 @@ public:
 
 class Item_bool_func :public Item_int_func
 {
-protected:
-  void add_key_fields_optimize_op(JOIN *join, KEY_FIELD **key_fields,
-                                  uint *and_level, table_map usable_tables,
-                                  SARGABLE_PARAM **sargables, bool equal_func);
 public:
   Item_bool_func() :Item_int_func() {}
   Item_bool_func(Item *a) :Item_int_func(a) {}
@@ -136,11 +132,6 @@ public:
   bool is_bool_type() { return true; }
   void fix_length_and_dec() { decimals=0; max_length=1; }
   uint decimal_precision() const { return 1; }
-  virtual bool can_optimize_group_min_max(Item_field *min_max_arg_item,
-                                          const Item *const_item) const
-  {
-    return false;
-  }
 };
 
 
@@ -289,24 +280,27 @@ public:
   void reset_cache() { cache= NULL; }
 };
 
+
+/*
+  Functions and operators with two arguments that can use range optimizer.
+*/
 class Item_bool_func2 :public Item_bool_func
 {                                              /* Bool with 2 string args */
+  bool have_rev_func() const { return rev_functype() != UNKNOWN_FUNC; }
+protected:
+  void add_key_fields_optimize_op(JOIN *join, KEY_FIELD **key_fields,
+                                  uint *and_level, table_map usable_tables,
+                                  SARGABLE_PARAM **sargables, bool equal_func);
 public:
   Item_bool_func2(Item *a,Item *b)
-    :Item_bool_func(a,b) { sargable= TRUE; }
-  optimize_type select_optimize() const { return OPTIMIZE_OP; }
+    :Item_bool_func(a,b) { }
   virtual enum Functype rev_functype() const { return UNKNOWN_FUNC; }
-  bool have_rev_func() const { return rev_functype() != UNKNOWN_FUNC; }
-
-  virtual inline void print(String *str, enum_query_type query_type)
-  {
-    Item_func::print_op(str, query_type);
-  }
 
   bool is_null() { return MY_TEST(args[0]->is_null() || args[1]->is_null()); }
+  SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
   COND *remove_eq_conds(THD *thd, Item::cond_result *cond_value,
                         bool top_level);
-
+  bool count_sargable_conds(uchar *arg);
 };
 
 class Item_bool_rowready_func2 :public Item_bool_func2
@@ -319,6 +313,10 @@ public:
   {
     allowed_arg_cols= 0;  // Fetch this value from first argument
   }
+  void print(String *str, enum_query_type query_type)
+  {
+    Item_func::print_op(str, query_type);
+  }
   Item *neg_transformer(THD *thd);
   virtual Item *negated_item();
   bool subst_argument_checker(uchar **arg)
@@ -330,6 +328,14 @@ public:
   {
     return cmp.set_cmp_func(this, tmp_arg, tmp_arg + 1, true);
   }
+  bool set_cmp_func_and_arg_cmp_context()
+  {
+    if (set_cmp_func())
+      return true;
+    tmp_arg[0]->cmp_context= tmp_arg[1]->cmp_context=
+      item_cmp_type(tmp_arg[0]->result_type(), tmp_arg[1]->result_type());
+    return false;
+  }
   CHARSET_INFO *compare_collation() const
   { return cmp.cmp_collation.collation; }
   Arg_comparator *get_comparator() { return &cmp; }
@@ -337,12 +343,6 @@ public:
   {
     Item_bool_func2::cleanup();
     cmp.cleanup();
-  }
-  bool can_optimize_group_min_max(Item_field *min_max_arg_item,
-                                  const Item *const_item) const
-  {
-    return min_max_arg_item->field->can_optimize_group_min_max(this,
-                                                               const_item);
   }
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields,
                       uint *and_level, table_map usable_tables,
@@ -354,16 +354,18 @@ public:
 };
 
 /**
-  XOR inherits from Item_bool_func2 because it is not optimized yet.
+  XOR inherits from Item_bool_func because it is not optimized yet.
   Later, when XOR is optimized, it needs to inherit from
   Item_cond instead. See WL#5800. 
 */
-class Item_func_xor :public Item_bool_func2
+class Item_func_xor :public Item_bool_func
 {
 public:
-  Item_func_xor(Item *i1, Item *i2) :Item_bool_func2(i1, i2) {}
+  Item_func_xor(Item *i1, Item *i2) :Item_bool_func(i1, i2) {}
   enum Functype functype() const { return XOR_FUNC; }
   const char *func_name() const { return "xor"; }
+  void print(String *str, enum_query_type query_type)
+  { Item_func::print_op(str, query_type); }
   longlong val_int();
   Item *neg_transformer(THD *thd);
   bool subst_argument_checker(uchar **arg)
@@ -589,8 +591,8 @@ public:
   Item_func_ne(Item *a,Item *b) :Item_bool_rowready_func2(a,b) {}
   longlong val_int();
   enum Functype functype() const { return NE_FUNC; }
+  enum Functype rev_functype() const { return NE_FUNC; }
   cond_result eq_cmp_result() const { return COND_FALSE; }
-  optimize_type select_optimize() const { return OPTIMIZE_KEY; } 
   const char *func_name() const { return "<>"; }
   Item *negated_item();
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields, uint *and_level,
@@ -639,12 +641,10 @@ public:
   /* TRUE <=> arguments will be compared as dates. */
   Item *compare_as_dates;
   Item_func_between(Item *a, Item *b, Item *c)
-    :Item_func_opt_neg(a, b, c), compare_as_dates(FALSE) { sargable= TRUE; }
+    :Item_func_opt_neg(a, b, c), compare_as_dates(FALSE) { }
   longlong val_int();
-  optimize_type select_optimize() const { return OPTIMIZE_KEY; }
   enum Functype functype() const   { return BETWEEN; }
   const char *func_name() const { return "between"; }
-  bool fix_fields(THD *, Item **);
   void fix_length_and_dec();
   virtual void print(String *str, enum_query_type query_type);
   CHARSET_INFO *compare_collation() const { return cmp_collation.collation; }
@@ -1314,7 +1314,6 @@ public:
   {
     bzero(&cmp_items, sizeof(cmp_items));
     allowed_arg_cols= 0;  // Fetch this value from first argument
-    sargable= TRUE;
   }
   longlong val_int();
   bool fix_fields(THD *, Item **);
@@ -1333,8 +1332,6 @@ public:
     }
     DBUG_VOID_RETURN;
   }
-  optimize_type select_optimize() const
-    { return OPTIMIZE_KEY; }
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields, uint *and_level,
                       table_map usable_tables, SARGABLE_PARAM **sargables);
   SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
@@ -1345,6 +1342,7 @@ public:
   CHARSET_INFO *compare_collation() const { return cmp_collation.collation; }
   bool eval_not_null_tables(uchar *opt_arg);
   void fix_after_pullout(st_select_lex *new_parent, Item **ref);
+  bool count_sargable_conds(uchar *arg);
 };
 
 class cmp_item_row :public cmp_item
@@ -1380,13 +1378,14 @@ public:
 class Item_func_null_predicate :public Item_bool_func
 {
 public:
-  Item_func_null_predicate(Item *a) :Item_bool_func(a) { sargable= true; }
-  optimize_type select_optimize() const { return OPTIMIZE_NULL; }
+  Item_func_null_predicate(Item *a) :Item_bool_func(a) { }
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields, uint *and_level,
                       table_map usable_tables, SARGABLE_PARAM **sargables);
+  SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
   CHARSET_INFO *compare_collation() const
   { return args[0]->collation.collation; }
   void fix_length_and_dec() { decimals=0; max_length=1; maybe_null=0; }
+  bool count_sargable_conds(uchar *arg);
 };
 
 
@@ -1492,6 +1491,7 @@ class Item_func_like :public Item_bool_func2
 
   DTCollation cmp_collation;
   String cmp_value1, cmp_value2;
+  bool with_sargable_pattern() const;
 public:
   int escape;
 
@@ -1501,7 +1501,10 @@ public:
      escape_used_in_parsing(escape_used), use_sampling(0) {}
   longlong val_int();
   enum Functype functype() const { return LIKE_FUNC; }
-  optimize_type select_optimize() const;
+  void print(String *str, enum_query_type query_type)
+  {
+    Item_func::print_op(str, query_type);
+  }
   CHARSET_INFO *compare_collation() const
   { return cmp_collation.collation; }
   cond_result eq_cmp_result() const
@@ -1541,6 +1544,12 @@ public:
   }
   void add_key_fields(JOIN *join, KEY_FIELD **key_fields, uint *and_level,
                       table_map usable_tables, SARGABLE_PARAM **sargables);
+  SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr)
+  {
+    return with_sargable_pattern() ?
+           Item_bool_func2::get_mm_tree(param, cond_ptr) :
+           Item_func::get_mm_tree(param, cond_ptr);
+  }
   const char *func_name() const { return "like"; }
   bool fix_fields(THD *thd, Item **ref);
   void fix_length_and_dec()
@@ -1567,6 +1576,10 @@ class Regexp_processor_pcre
   int m_pcre_exec_rc;
   int m_SubStrVec[30];
   uint m_subpatterns_needed;
+  void pcre_exec_warn(int rc) const;
+  int pcre_exec_with_warn(const pcre *code, const pcre_extra *extra,
+                          const char *subject, int length, int startoffset,
+                          int options, int *ovector, int ovecsize);
 public:
   String *convert_if_needed(String *src, String *converter);
   String subject_converter;
@@ -1580,7 +1593,7 @@ public:
     m_subpatterns_needed(0)
   {}
   int default_regex_flags();
-  void init(CHARSET_INFO *data_charset, int extra_flags, uint nsubpatterns)
+  void init(CHARSET_INFO *data_charset, int extra_flags, uint nsubpatterns_arg)
   {
     m_library_flags= default_regex_flags() | extra_flags |
                     (data_charset != &my_charset_bin ?
@@ -1594,7 +1607,7 @@ public:
 
     m_conversion_is_needed= (data_charset != &my_charset_bin) &&
                             !my_charset_same(data_charset, m_library_charset);
-    m_subpatterns_needed= nsubpatterns;
+    m_subpatterns_needed= nsubpatterns_arg;
   }
   void fix_owner(Item_func *owner, Item *subject_arg, Item *pattern_arg);
   bool compile(String *pattern, bool send_error);
@@ -1746,7 +1759,8 @@ public:
                       SARGABLE_PARAM **sargables);
   SEL_TREE *get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr);
   virtual void print(String *str, enum_query_type query_type);
-  void split_sum_func(THD *thd, Item **ref_pointer_array, List<Item> &fields);
+  void split_sum_func(THD *thd, Item **ref_pointer_array, List<Item> &fields,
+                      uint flags);
   friend int setup_conds(THD *thd, TABLE_LIST *tables, TABLE_LIST *leaves,
                          COND **conds);
   void top_level_item() { abort_on_null=1; }
@@ -1923,7 +1937,6 @@ public:
   enum Functype functype() const { return MULT_EQUAL_FUNC; }
   longlong val_int(); 
   const char *func_name() const { return "multiple equal"; }
-  optimize_type select_optimize() const { return OPTIMIZE_EQUAL; }
   void sort(Item_field_cmpfunc compare, void *arg);
   void fix_length_and_dec();
   bool fix_fields(THD *thd, Item **ref);

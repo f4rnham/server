@@ -1,5 +1,5 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates.
-   Copyright (c) 2009, 2014, Monty Program Ab.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2015, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -409,7 +409,7 @@ ha_rows filesort(THD *thd, TABLE *table, SORT_FIELD *sortorder, uint s_length,
                     "%s: %s",
                     MYF(0),
                     ER_THD(thd, ER_FILSORT_ABORT),
-                    kill_errno ? ER(kill_errno) :
+                    kill_errno ? ER_THD(thd, kill_errno) :
                     thd->killed == ABORT_QUERY ? "" :
                     thd->get_stmt_da()->message());
 
@@ -447,10 +447,11 @@ ha_rows filesort(THD *thd, TABLE *table, SORT_FIELD *sortorder, uint s_length,
 void filesort_free_buffers(TABLE *table, bool full)
 {
   DBUG_ENTER("filesort_free_buffers");
+
   my_free(table->sort.record_pointers);
   table->sort.record_pointers= NULL;
 
-  if (full)
+  if (unlikely(full))
   {
     table->sort.free_sort_buffer();
     my_free(table->sort.buffpek);
@@ -458,10 +459,14 @@ void filesort_free_buffers(TABLE *table, bool full)
     table->sort.buffpek_len= 0;
   }
 
-  my_free(table->sort.addon_buf);
-  my_free(table->sort.addon_field);
-  table->sort.addon_buf= NULL;
-  table->sort.addon_field= NULL;
+  /* addon_buf is only allocated if addon_field is set */
+  if (unlikely(table->sort.addon_field))
+  {
+    my_free(table->sort.addon_field);
+    my_free(table->sort.addon_buf);
+    table->sort.addon_buf= NULL;
+    table->sort.addon_field= NULL;
+  }
   DBUG_VOID_RETURN;
 }
 

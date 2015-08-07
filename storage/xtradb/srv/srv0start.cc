@@ -74,6 +74,8 @@ Created 2/16/1996 Heikki Tuuri
 #include "ut0timer.h"
 #include "btr0scrub.h"
 
+#include <mysql/service_wsrep.h>
+
 #ifndef UNIV_HOTBACKUP
 # include "trx0rseg.h"
 # include "os0proc.h"
@@ -1060,7 +1062,7 @@ skip_size_check:
 check_first_page:
 			check_msg = fil_read_first_page(
 				files[i], one_opened, &flags, &space,
-				min_flushed_lsn, max_flushed_lsn, ULINT_UNDEFINED, &crypt_data);
+				min_flushed_lsn, max_flushed_lsn, &crypt_data);
 
 			if (check_msg) {
 
@@ -3025,9 +3027,24 @@ files_checked:
 	}
 
 	if (!srv_read_only_mode) {
+#ifdef WITH_WSREP
+		/*
+		  Create the dump/load thread only when not running with
+		  --wsrep-recover.
+		*/
+		if (!wsrep_recovery) {
+#endif /* WITH_WSREP */
 		/* Create the buffer pool dump/load thread */
-		buf_dump_thread_handle = os_thread_create(buf_dump_thread, NULL, NULL);
+		buf_dump_thread_handle=
+			os_thread_create(buf_dump_thread, NULL, NULL);
 		buf_dump_thread_started = true;
+#ifdef WITH_WSREP
+		} else {
+			ib_logf(IB_LOG_LEVEL_WARN,
+				"Skipping buffer pool dump/restore during "
+				"wsrep recovery.");
+		}
+#endif /* WITH_WSREP */
 
 		/* Create the dict stats gathering thread */
 		dict_stats_thread_handle = os_thread_create(dict_stats_thread, NULL, NULL);
@@ -3277,9 +3294,9 @@ innobase_shutdown_for_mysql(void)
 
 	ibuf_close();
 	log_shutdown();
-	lock_sys_close();
 	trx_sys_file_format_close();
 	trx_sys_close();
+	lock_sys_close();
 
 	/* We don't create these mutexes in RO mode because we don't create
 	the temp files that the cover. */

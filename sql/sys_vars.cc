@@ -34,7 +34,7 @@
 #include "sql_plugin.h"                         // Includes my_global.h
 #include "sql_priv.h"
 #include "sql_class.h"                          // set_var.h: THD
-#include "sys_vars.h"
+#include "sys_vars.ic"
 
 #include "events.h"
 #include <thr_alarm.h>
@@ -1267,7 +1267,8 @@ static bool check_max_allowed_packet(sys_var *self, THD *thd,  set_var *var)
   if (val < (longlong) global_system_variables.net_buffer_length)
   {
     push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
-                        WARN_OPTION_BELOW_LIMIT, ER(WARN_OPTION_BELOW_LIMIT),
+                        WARN_OPTION_BELOW_LIMIT,
+                        ER_THD(thd, WARN_OPTION_BELOW_LIMIT),
                         "max_allowed_packet", "net_buffer_length");
   }
   return false;
@@ -1714,7 +1715,7 @@ Sys_var_gtid_binlog_state::global_update(THD *thd, set_var *var)
   struct gtid_binlog_state_data *data=
     (struct gtid_binlog_state_data *)var->save_result.ptr;
   mysql_mutex_unlock(&LOCK_global_system_variables);
-  res= (0 != reset_master(thd, data->list, data->list_len));
+  res= (reset_master(thd, data->list, data->list_len, 0) != 0);
   mysql_mutex_lock(&LOCK_global_system_variables);
   my_free(data->list);
   my_free(data);
@@ -2171,7 +2172,8 @@ static bool check_net_buffer_length(sys_var *self, THD *thd,  set_var *var)
   if (val > (longlong) global_system_variables.max_allowed_packet)
   {
     push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
-                        WARN_OPTION_BELOW_LIMIT, ER(WARN_OPTION_BELOW_LIMIT),
+                        WARN_OPTION_BELOW_LIMIT,
+                        ER_THD(thd, WARN_OPTION_BELOW_LIMIT),
                         "max_allowed_packet", "net_buffer_length");
   }
   return false;
@@ -2355,7 +2357,7 @@ static bool fix_optimizer_switch(sys_var *self, THD *thd,
   if (sv->optimizer_switch & deprecated_ENGINE_CONDITION_PUSHDOWN)
     push_warning_printf(current_thd, Sql_condition::WARN_LEVEL_WARN,
                         ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
-                        ER(ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
+                        ER_THD(thd, ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
                         "engine_condition_pushdown=on");
   return false;
 }
@@ -2702,7 +2704,7 @@ static bool fix_query_cache_size(sys_var *self, THD *thd, enum_var_type type)
   */
   if (query_cache_size != new_cache_size)
     push_warning_printf(current_thd, Sql_condition::WARN_LEVEL_WARN,
-                        ER_WARN_QC_RESIZE, ER(ER_WARN_QC_RESIZE),
+                        ER_WARN_QC_RESIZE, ER_THD(thd, ER_WARN_QC_RESIZE),
                         query_cache_size, new_cache_size);
 
   query_cache_size= new_cache_size;
@@ -3426,7 +3428,7 @@ static Sys_var_plugin Sys_default_tmp_storage_engine(
 
 static Sys_var_plugin Sys_enforce_storage_engine(
        "enforce_storage_engine", "Force the use of a storage engine for new tables",
-       SESSION_ONLY(enforced_table_plugin),
+       SESSION_VAR(enforced_table_plugin),
        NO_CMD_LINE, MYSQL_STORAGE_ENGINE_PLUGIN,
        DEFAULT(&enforced_storage_engine), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_has_super));
 
@@ -4585,11 +4587,22 @@ static bool check_locale(sys_var *self, THD *thd, set_var *var)
   return false;
 }
 
+static bool update_locale(sys_var *self, THD* thd, enum_var_type type)
+{
+  /* Cache pointer to error messages */
+  if (type == OPT_SESSION)
+    thd->variables.errmsgs= thd->variables.lc_messages->errmsgs->errmsgs;
+  else
+    global_system_variables.errmsgs=
+      global_system_variables.lc_messages->errmsgs->errmsgs;
+  return false;
+}
+  
 static Sys_var_struct Sys_lc_messages(
        "lc_messages", "Set the language used for the error messages",
        SESSION_VAR(lc_messages), NO_CMD_LINE,
        my_offsetof(MY_LOCALE, name), DEFAULT(&my_default_lc_messages),
-       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_locale));
+       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_locale), ON_UPDATE(update_locale));
 
 static Sys_var_struct Sys_lc_time_names(
        "lc_time_names", "Set the language used for the month "
@@ -4810,8 +4823,10 @@ static Sys_var_uint Sys_wsrep_sync_wait(
 static const char *wsrep_OSU_method_names[]= { "TOI", "RSU", NullS };
 static Sys_var_enum Sys_wsrep_OSU_method(
        "wsrep_OSU_method", "Method for Online Schema Upgrade",
-       GLOBAL_VAR(wsrep_OSU_method_options), CMD_LINE(OPT_ARG),
-       wsrep_OSU_method_names, DEFAULT(WSREP_OSU_TOI));
+       SESSION_VAR(wsrep_OSU_method), CMD_LINE(OPT_ARG),
+       wsrep_OSU_method_names, DEFAULT(WSREP_OSU_TOI),
+       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0),
+       ON_UPDATE(0));
 
 static PolyLock_mutex PLock_wsrep_desync(&LOCK_wsrep_desync);
 static Sys_var_mybool Sys_wsrep_desync (
@@ -5199,6 +5214,22 @@ static Sys_var_mybool Sys_encrypt_tmp_files(
        "Encrypt temporary files (created for filesort, binary log cache, etc)",
        READ_ONLY GLOBAL_VAR(encrypt_tmp_files),
        CMD_LINE(OPT_ARG), DEFAULT(TRUE));
+
+static const char *binlog_row_image_names[]= {"MINIMAL", "NOBLOB", "FULL", NullS};
+static Sys_var_enum Sys_binlog_row_image(
+       "binlog_row_image",
+       "Controls whether rows should be logged in 'FULL', 'NOBLOB' or "
+       "'MINIMAL' formats. 'FULL', means that all columns in the before "
+       "and after image are logged. 'NOBLOB', means that mysqld avoids logging "
+       "blob columns whenever possible (eg, blob column was not changed or "
+       "is not part of primary key). 'MINIMAL', means that a PK equivalent (PK "
+       "columns or full row if there is no PK in the table) is logged in the "
+       "before image, and only changed columns are logged in the after image. "
+       "(Default: FULL).",
+       SESSION_VAR(binlog_row_image), CMD_LINE(REQUIRED_ARG),
+       binlog_row_image_names, DEFAULT(BINLOG_ROW_IMAGE_FULL),
+       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(NULL),
+       ON_UPDATE(NULL));
 
 static bool check_pseudo_slave_mode(sys_var *self, THD *thd, set_var *var)
 {

@@ -1137,7 +1137,7 @@ Internal_error_handler *THD::pop_internal_handler()
 
 void THD::raise_error(uint sql_errno)
 {
-  const char* msg= ER(sql_errno);
+  const char* msg= ER_THD(this, sql_errno);
   (void) raise_condition(sql_errno,
                          NULL,
                          Sql_condition::WARN_LEVEL_ERROR,
@@ -1150,7 +1150,7 @@ void THD::raise_error_printf(uint sql_errno, ...)
   char ebuff[MYSQL_ERRMSG_SIZE];
   DBUG_ENTER("THD::raise_error_printf");
   DBUG_PRINT("my", ("nr: %d  errno: %d", sql_errno, errno));
-  const char* format= ER(sql_errno);
+  const char* format= ER_THD(this, sql_errno);
   va_start(args, sql_errno);
   my_vsnprintf(ebuff, sizeof(ebuff), format, args);
   va_end(args);
@@ -1163,7 +1163,7 @@ void THD::raise_error_printf(uint sql_errno, ...)
 
 void THD::raise_warning(uint sql_errno)
 {
-  const char* msg= ER(sql_errno);
+  const char* msg= ER_THD(this, sql_errno);
   (void) raise_condition(sql_errno,
                          NULL,
                          Sql_condition::WARN_LEVEL_WARN,
@@ -1176,7 +1176,7 @@ void THD::raise_warning_printf(uint sql_errno, ...)
   char    ebuff[MYSQL_ERRMSG_SIZE];
   DBUG_ENTER("THD::raise_warning_printf");
   DBUG_PRINT("enter", ("warning: %u", sql_errno));
-  const char* format= ER(sql_errno);
+  const char* format= ER_THD(this, sql_errno);
   va_start(args, sql_errno);
   my_vsnprintf(ebuff, sizeof(ebuff), format, args);
   va_end(args);
@@ -1193,7 +1193,7 @@ void THD::raise_note(uint sql_errno)
   DBUG_PRINT("enter", ("code: %d", sql_errno));
   if (!(variables.option_bits & OPTION_SQL_NOTES))
     DBUG_VOID_RETURN;
-  const char* msg= ER(sql_errno);
+  const char* msg= ER_THD(this, sql_errno);
   (void) raise_condition(sql_errno,
                          NULL,
                          Sql_condition::WARN_LEVEL_NOTE,
@@ -1209,7 +1209,7 @@ void THD::raise_note_printf(uint sql_errno, ...)
   DBUG_PRINT("enter",("code: %u", sql_errno));
   if (!(variables.option_bits & OPTION_SQL_NOTES))
     DBUG_VOID_RETURN;
-  const char* format= ER(sql_errno);
+  const char* format= ER_THD(this, sql_errno);
   va_start(args, sql_errno);
   my_vsnprintf(ebuff, sizeof(ebuff), format, args);
   va_end(args);
@@ -1243,7 +1243,7 @@ Sql_condition* THD::raise_condition(uint sql_errno,
   if (sql_errno == 0)
     sql_errno= ER_UNKNOWN_ERROR;
   if (msg == NULL)
-    msg= ER(sql_errno);
+    msg= ER_THD(this, sql_errno);
   if (sqlstate == NULL)
    sqlstate= mysql_errno_to_sqlstate(sql_errno);
 
@@ -1427,12 +1427,10 @@ void THD::init(void)
   wsrep_trx_meta.depends_on= WSREP_SEQNO_UNDEFINED;
   wsrep_converted_lock_session= false;
   wsrep_retry_counter= 0;
-  wsrep_rli= NULL;
   wsrep_rgi= NULL;
   wsrep_PA_safe= true;
   wsrep_consistency_check = NO_CONSISTENCY_CHECK;
   wsrep_mysql_replicated  = 0;
-
   wsrep_TOI_pre_query     = NULL;
   wsrep_TOI_pre_query_len = 0;
 #endif
@@ -1634,7 +1632,6 @@ THD::~THD()
   mysql_mutex_lock(&LOCK_wsrep_thd);
   mysql_mutex_unlock(&LOCK_wsrep_thd);
   mysql_mutex_destroy(&LOCK_wsrep_thd);
-  if (wsrep_rli) delete wsrep_rli;
   if (wsrep_rgi) delete wsrep_rgi;
 #endif
   /* Close connection */
@@ -2954,7 +2951,7 @@ select_export::prepare(List<Item> &list, SELECT_LEX_UNIT *u)
     */
     push_warning(thd, Sql_condition::WARN_LEVEL_WARN,
                  WARN_NON_ASCII_SEPARATOR_NOT_IMPLEMENTED,
-                 ER(WARN_NON_ASCII_SEPARATOR_NOT_IMPLEMENTED));
+                 ER_THD(thd, WARN_NON_ASCII_SEPARATOR_NOT_IMPLEMENTED));
   }
   field_term_length=exchange->field_term->length();
   field_term_char= field_term_length ?
@@ -2984,7 +2981,8 @@ select_export::prepare(List<Item> &list, SELECT_LEX_UNIT *u)
        field_term_length && strchr(NUMERIC_CHARS, field_term_char)))
   {
     push_warning(thd, Sql_condition::WARN_LEVEL_WARN,
-                 ER_AMBIGUOUS_FIELD_TERM, ER(ER_AMBIGUOUS_FIELD_TERM));
+                 ER_AMBIGUOUS_FIELD_TERM,
+                 ER_THD(thd, ER_AMBIGUOUS_FIELD_TERM));
     is_ambiguous_field_term= TRUE;
   }
   else
@@ -3061,7 +3059,7 @@ int select_export::send_data(List<Item> &items)
                              res->charset(), 6);
         push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                             ER_TRUNCATED_WRONG_VALUE_FOR_FIELD,
-                            ER(ER_TRUNCATED_WRONG_VALUE_FOR_FIELD),
+                            ER_THD(thd, ER_TRUNCATED_WRONG_VALUE_FOR_FIELD),
                             "string", printable_buff,
                             item->name, static_cast<long>(row_count));
       }
@@ -3071,7 +3069,8 @@ int select_export::send_data(List<Item> &items)
           result is longer than UINT_MAX32 and doesn't fit into String
         */
         push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
-                            WARN_DATA_TRUNCATED, ER(WARN_DATA_TRUNCATED),
+                            WARN_DATA_TRUNCATED,
+                            ER_THD(thd, WARN_DATA_TRUNCATED),
                             item->full_name(), static_cast<long>(row_count));
       }
       cvt_str.length(bytes);
@@ -3271,7 +3270,7 @@ int select_dump::send_data(List<Item> &items)
 
   if (row_count++ > 1) 
   {
-    my_message(ER_TOO_MANY_ROWS, ER(ER_TOO_MANY_ROWS), MYF(0));
+    my_message(ER_TOO_MANY_ROWS, ER_THD(thd, ER_TOO_MANY_ROWS), MYF(0));
     goto err;
   }
   while ((item=li++))
@@ -3300,7 +3299,7 @@ int select_singlerow_subselect::send_data(List<Item> &items)
   Item_singlerow_subselect *it= (Item_singlerow_subselect *)item;
   if (it->assigned())
   {
-    my_message(ER_SUBQUERY_NO_1_ROW, ER(ER_SUBQUERY_NO_1_ROW),
+    my_message(ER_SUBQUERY_NO_1_ROW, ER_THD(thd, ER_SUBQUERY_NO_1_ROW),
                MYF(current_thd->lex->ignore ? ME_JUST_WARNING : 0));
     DBUG_RETURN(1);
   }
@@ -3473,7 +3472,7 @@ int select_dumpvar::prepare(List<Item> &list, SELECT_LEX_UNIT *u)
   if (var_list.elements != list.elements)
   {
     my_message(ER_WRONG_NUMBER_OF_COLUMNS_IN_SELECT,
-               ER(ER_WRONG_NUMBER_OF_COLUMNS_IN_SELECT), MYF(0));
+               ER_THD(thd, ER_WRONG_NUMBER_OF_COLUMNS_IN_SELECT), MYF(0));
     return 1;
   }               
   return 0;
@@ -3827,7 +3826,7 @@ int select_dumpvar::send_data(List<Item> &items)
   }
   if (row_count++) 
   {
-    my_message(ER_TOO_MANY_ROWS, ER(ER_TOO_MANY_ROWS), MYF(0));
+    my_message(ER_TOO_MANY_ROWS, ER_THD(thd, ER_TOO_MANY_ROWS), MYF(0));
     DBUG_RETURN(1);
   }
   while ((mv= var_li++) && (item= it++))
@@ -3842,7 +3841,7 @@ bool select_dumpvar::send_eof()
 {
   if (! row_count)
     push_warning(thd, Sql_condition::WARN_LEVEL_WARN,
-                 ER_SP_FETCH_NO_DATA, ER(ER_SP_FETCH_NO_DATA));
+                 ER_SP_FETCH_NO_DATA, ER_THD(thd, ER_SP_FETCH_NO_DATA));
   /*
     Don't send EOF if we're in error condition (which implies we've already
     sent or are sending an error)
@@ -5742,7 +5741,8 @@ int THD::decide_logging_format(TABLE_LIST *tables)
              unsafe_type++)
           if (unsafe_flags & (1 << unsafe_type))
             my_error((error= ER_BINLOG_UNSAFE_AND_STMT_ENGINE), MYF(0),
-                     ER(LEX::binlog_stmt_unsafe_errcode[unsafe_type]));
+                     ER_THD(this,
+                            LEX::binlog_stmt_unsafe_errcode[unsafe_type]));
       }
       /* log in statement format! */
     }
@@ -5782,7 +5782,7 @@ int THD::decide_logging_format(TABLE_LIST *tables)
 
           DBUG_PRINT("info", ("Scheduling warning to be issued by "
                               "binlog_query: '%s'",
-                              ER(ER_BINLOG_UNSAFE_STATEMENT)));
+                              ER_THD(this, ER_BINLOG_UNSAFE_STATEMENT)));
           DBUG_PRINT("info", ("binlog_unsafe_warning_flags: 0x%x",
                               binlog_unsafe_warning_flags));
         }
@@ -5919,13 +5919,11 @@ int THD::decide_logging_format(TABLE_LIST *tables)
     If error, NULL.
  */
 
-template <class RowsEventT> Rows_log_event* 
+template <class RowsEventT> Rows_log_event*
 THD::binlog_prepare_pending_rows_event(TABLE* table, uint32 serv_id,
-                                       MY_BITMAP const* cols,
-                                       size_t colcnt,
                                        size_t needed,
                                        bool is_transactional,
-				       RowsEventT *hint __attribute__((unused)))
+                                       RowsEventT *hint __attribute__((unused)))
 {
   DBUG_ENTER("binlog_prepare_pending_rows_event");
   /* Pre-conditions */
@@ -5961,16 +5959,15 @@ THD::binlog_prepare_pending_rows_event(TABLE* table, uint32 serv_id,
     event.
   */
   if (!pending ||
-      pending->server_id != serv_id || 
+      pending->server_id != serv_id ||
       pending->get_table_id() != table->s->table_map_id ||
-      pending->get_general_type_code() != general_type_code || 
-      pending->get_data_size() + needed > opt_binlog_rows_event_max_size || 
-      pending->get_width() != colcnt ||
-      !bitmap_cmp(pending->get_cols(), cols)) 
+      pending->get_general_type_code() != general_type_code ||
+      pending->get_data_size() + needed > opt_binlog_rows_event_max_size ||
+      pending->read_write_bitmaps_cmp(table) == FALSE)
   {
     /* Create a new RowsEventT... */
     Rows_log_event* const
-	ev= new RowsEventT(this, table, table->s->table_map_id, cols,
+        ev= new RowsEventT(this, table, table->s->table_map_id,
                            is_transactional);
     if (unlikely(!ev))
       DBUG_RETURN(NULL);
@@ -6115,9 +6112,8 @@ CPP_UNNAMED_NS_START
 
 CPP_UNNAMED_NS_END
 
-int THD::binlog_write_row(TABLE* table, bool is_trans, 
-                          MY_BITMAP const* cols, size_t colcnt, 
-                          uchar const *record) 
+int THD::binlog_write_row(TABLE* table, bool is_trans,
+                          uchar const *record)
 {
 
   DBUG_ASSERT(is_current_stmt_binlog_format_row() &&
@@ -6132,14 +6128,14 @@ int THD::binlog_write_row(TABLE* table, bool is_trans,
 
   uchar *row_data= memory.slot(0);
 
-  size_t const len= pack_row(table, cols, row_data, record);
+  size_t const len= pack_row(table, table->write_set, row_data, record);
 
   /* Ensure that all events in a GTID group are in the same cache */
   if (variables.option_bits & OPTION_GTID_BEGIN)
     is_trans= 1;
 
   Rows_log_event* const ev=
-    binlog_prepare_pending_rows_event(table, variables.server_id, cols, colcnt,
+    binlog_prepare_pending_rows_event(table, variables.server_id,
                                       len, is_trans,
                                       static_cast<Write_rows_log_event*>(0));
 
@@ -6150,12 +6146,18 @@ int THD::binlog_write_row(TABLE* table, bool is_trans,
 }
 
 int THD::binlog_update_row(TABLE* table, bool is_trans,
-                           MY_BITMAP const* cols, size_t colcnt,
                            const uchar *before_record,
                            const uchar *after_record)
 {
   DBUG_ASSERT(is_current_stmt_binlog_format_row() &&
             ((WSREP(this) && wsrep_emulate_bin_log) || mysql_bin_log.is_open()));
+
+  /**
+    Save a reference to the original read and write set bitmaps.
+    We will need this to restore the bitmaps at the end.
+   */
+  MY_BITMAP *old_read_set= table->read_set;
+  MY_BITMAP *old_write_set= table->write_set;
 
   size_t const before_maxlen = max_row_length(table, before_record);
   size_t const after_maxlen  = max_row_length(table, after_record);
@@ -6167,9 +6169,9 @@ int THD::binlog_update_row(TABLE* table, bool is_trans,
   uchar *before_row= row_data.slot(0);
   uchar *after_row= row_data.slot(1);
 
-  size_t const before_size= pack_row(table, cols, before_row,
+  size_t const before_size= pack_row(table, table->read_set, before_row,
                                         before_record);
-  size_t const after_size= pack_row(table, cols, after_row,
+  size_t const after_size= pack_row(table, table->write_set, after_row,
                                        after_record);
 
   /* Ensure that all events in a GTID group are in the same cache */
@@ -6188,26 +6190,44 @@ int THD::binlog_update_row(TABLE* table, bool is_trans,
 #endif
 
   Rows_log_event* const ev=
-    binlog_prepare_pending_rows_event(table, variables.server_id, cols, colcnt,
-				      before_size + after_size, is_trans,
-				      static_cast<Update_rows_log_event*>(0));
+    binlog_prepare_pending_rows_event(table, variables.server_id,
+                                      before_size + after_size, is_trans,
+                                      static_cast<Update_rows_log_event*>(0));
 
   if (unlikely(ev == 0))
     return HA_ERR_OUT_OF_MEM;
 
-  return
-    ev->add_row_data(before_row, before_size) ||
-    ev->add_row_data(after_row, after_size);
+  int error=  ev->add_row_data(before_row, before_size) ||
+              ev->add_row_data(after_row, after_size);
+
+  /* restore read/write set for the rest of execution */
+  table->column_bitmaps_set_no_signal(old_read_set,
+                                      old_write_set);
+
+  return error;
+
 }
 
 int THD::binlog_delete_row(TABLE* table, bool is_trans, 
-                           MY_BITMAP const* cols, size_t colcnt,
                            uchar const *record)
 {
   DBUG_ASSERT(is_current_stmt_binlog_format_row() &&
             ((WSREP(this) && wsrep_emulate_bin_log) || mysql_bin_log.is_open()));
+  /**
+    Save a reference to the original read and write set bitmaps.
+    We will need this to restore the bitmaps at the end.
+   */
+  MY_BITMAP *old_read_set= table->read_set;
+  MY_BITMAP *old_write_set= table->write_set;
 
-  /* 
+  /** 
+     This will remove spurious fields required during execution but
+     not needed for binlogging. This is done according to the:
+     binlog-row-image option.
+   */
+  binlog_prepare_row_images(table);
+
+  /*
      Pack records into format for transfer. We are allocating more
      memory than needed, but that doesn't matter.
   */
@@ -6217,22 +6237,94 @@ int THD::binlog_delete_row(TABLE* table, bool is_trans,
 
   uchar *row_data= memory.slot(0);
 
-  size_t const len= pack_row(table, cols, row_data, record);
+  DBUG_DUMP("table->read_set", (uchar*) table->read_set->bitmap, (table->s->fields + 7) / 8);
+  size_t const len= pack_row(table, table->read_set, row_data, record);
 
   /* Ensure that all events in a GTID group are in the same cache */
   if (variables.option_bits & OPTION_GTID_BEGIN)
     is_trans= 1;
 
   Rows_log_event* const ev=
-    binlog_prepare_pending_rows_event(table, variables.server_id, cols, colcnt,
-				      len, is_trans,
-				      static_cast<Delete_rows_log_event*>(0));
+    binlog_prepare_pending_rows_event(table, variables.server_id,
+                                      len, is_trans,
+                                      static_cast<Delete_rows_log_event*>(0));
 
   if (unlikely(ev == 0))
     return HA_ERR_OUT_OF_MEM;
 
-  return ev->add_row_data(row_data, len);
+
+  int error= ev->add_row_data(row_data, len);
+
+  /* restore read/write set for the rest of execution */
+  table->column_bitmaps_set_no_signal(old_read_set,
+                                      old_write_set);
+
+  return error;
 }
+
+
+void THD::binlog_prepare_row_images(TABLE *table)
+{
+  DBUG_ENTER("THD::binlog_prepare_row_images");
+  /**
+    Remove from read_set spurious columns. The write_set has been
+    handled before in table->mark_columns_needed_for_update.
+   */
+
+  DBUG_PRINT_BITSET("debug", "table->read_set (before preparing): %s", table->read_set);
+  THD *thd= table->in_use;
+
+  /**
+    if there is a primary key in the table (ie, user declared PK or a
+    non-null unique index) and we dont want to ship the entire image,
+    and the handler involved supports this.
+   */
+  if (table->s->primary_key < MAX_KEY &&
+      (thd->variables.binlog_row_image < BINLOG_ROW_IMAGE_FULL) &&
+      !ha_check_storage_engine_flag(table->s->db_type(), HTON_NO_BINLOG_ROW_OPT))
+  {
+    /**
+      Just to be sure that tmp_set is currently not in use as
+      the read_set already.
+    */
+    DBUG_ASSERT(table->read_set != &table->tmp_set);
+
+    bitmap_clear_all(&table->tmp_set);
+
+    switch(thd->variables.binlog_row_image)
+    {
+      case BINLOG_ROW_IMAGE_MINIMAL:
+        /* MINIMAL: Mark only PK */
+        table->mark_columns_used_by_index_no_reset(table->s->primary_key,
+                                                   &table->tmp_set);
+        break;
+      case BINLOG_ROW_IMAGE_NOBLOB:
+        /**
+          NOBLOB: Remove unnecessary BLOB fields from read_set
+                  (the ones that are not part of PK).
+         */
+        bitmap_union(&table->tmp_set, table->read_set);
+        for (Field **ptr=table->field ; *ptr ; ptr++)
+        {
+          Field *field= (*ptr);
+          if ((field->type() == MYSQL_TYPE_BLOB) &&
+              !(field->flags & PRI_KEY_FLAG))
+            bitmap_clear_bit(&table->tmp_set, field->field_index);
+        }
+        break;
+      default:
+        DBUG_ASSERT(0); // impossible.
+    }
+
+    /* set the temporary read_set */
+    table->column_bitmaps_set_no_signal(&table->tmp_set,
+                                        table->write_set);
+  }
+
+  DBUG_PRINT_BITSET("debug", "table->read_set (after preparing): %s", table->read_set);
+  DBUG_VOID_RETURN;
+}
+
 
 
 int THD::binlog_remove_pending_rows_event(bool clear_maps,
@@ -6349,13 +6441,13 @@ static void reset_binlog_unsafe_suppression(ulonglong now)
 /**
   Auxiliary function to print warning in the error log.
 */
-static void print_unsafe_warning_to_log(int unsafe_type, char* buf,
-                                 char* query)
+static void print_unsafe_warning_to_log(THD *thd, int unsafe_type, char* buf,
+                                        char* query)
 {
   DBUG_ENTER("print_unsafe_warning_in_log");
-  sprintf(buf, ER(ER_BINLOG_UNSAFE_STATEMENT),
-          ER(LEX::binlog_stmt_unsafe_errcode[unsafe_type]));
-  sql_print_warning(ER(ER_MESSAGE_AND_STATEMENT), buf, query);
+  sprintf(buf, ER_THD(thd, ER_BINLOG_UNSAFE_STATEMENT),
+          ER_THD(thd, LEX::binlog_stmt_unsafe_errcode[unsafe_type]));
+  sql_print_warning(ER_THD(thd, ER_MESSAGE_AND_STATEMENT), buf, query);
   DBUG_VOID_RETURN;
 }
 
@@ -6483,11 +6575,11 @@ void THD::issue_unsafe_warnings()
     {
       push_warning_printf(this, Sql_condition::WARN_LEVEL_NOTE,
                           ER_BINLOG_UNSAFE_STATEMENT,
-                          ER(ER_BINLOG_UNSAFE_STATEMENT),
-                          ER(LEX::binlog_stmt_unsafe_errcode[unsafe_type]));
+                          ER_THD(this, ER_BINLOG_UNSAFE_STATEMENT),
+                          ER_THD(this, LEX::binlog_stmt_unsafe_errcode[unsafe_type]));
       if (global_system_variables.log_warnings > 0 &&
           !protect_against_unsafe_warning_flood(unsafe_type))
-        print_unsafe_warning_to_log(unsafe_type, buf, query());
+        print_unsafe_warning_to_log(this, unsafe_type, buf, query());
     }
   }
   DBUG_VOID_RETURN;
@@ -6617,14 +6709,6 @@ int THD::binlog_query(THD::enum_binlog_query_type qtype, char const *query_arg,
       The MYSQL_LOG::write() function will set the STMT_END_F flag and
       flush the pending rows event if necessary.
     */
-    /*
-      Even though wsrep only supports ROW binary log format, a user can set
-      binlog format to STATEMENT (wsrep_forced_binlog_format). In which case
-      the control might reach here even when binary logging (--log-bin) is
-      not enabled. This is possible because wsrep patch partially enables
-      binary logging by setting wsrep_emulate_binlog.
-    */
-    if (mysql_bin_log.is_open())
     {
       Query_log_event qinfo(this, query_arg, query_len, is_trans, direct,
                             suppress_use, errcode);
@@ -6868,7 +6952,7 @@ wait_for_commit::wait_for_prior_commit2(THD *thd)
   wakeup_error= thd->killed_errno();
   if (!wakeup_error)
     wakeup_error= ER_QUERY_INTERRUPTED;
-  my_message(wakeup_error, ER(wakeup_error), MYF(0));
+  my_message(wakeup_error, ER_THD(thd, wakeup_error), MYF(0));
   thd->EXIT_COND(&old_stage);
   /*
     Must do the DEBUG_SYNC() _after_ exit_cond(), as DEBUG_SYNC is not safe to
