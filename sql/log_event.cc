@@ -9761,7 +9761,8 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
       }
 #endif
       // In provisioning mode, silently ignore table not found error
-      if (!rli->mi->provisioning_mode || !provisioning_error_code(actual_error))
+      if (!rgi->thd->slave_thread || !rli->mi->provisioning_mode ||
+          !provisioning_error_code(actual_error))
       {
         if ((thd->is_slave_error || thd->is_fatal_error) &&
             !is_parallel_retry_error(rgi, actual_error))
@@ -9972,7 +9973,8 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
         int actual_error= convert_handler_error(error, thd, table);
 
         // Ignore certain errors during provisioning
-        if (rli->mi->provisioning_mode && provisioning_error_code(actual_error))
+        if (rgi->thd->slave_thread && rli->mi->provisioning_mode &&
+            provisioning_error_code(actual_error))
         {
           clear_all_errors(thd, const_cast<Relay_log_info*>(rli));
           error= 0;
