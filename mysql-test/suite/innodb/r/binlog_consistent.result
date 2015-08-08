@@ -3,11 +3,11 @@ RESET MASTER;
 CREATE TABLE t1 (a INT, b VARCHAR(100), PRIMARY KEY (a,b)) ENGINE=innodb;
 SHOW MASTER STATUS;
 File	Position	Binlog_Do_DB	Binlog_Ignore_DB
-master-bin.000001	486		
+master-bin.000001	487		
 SHOW STATUS LIKE 'binlog_snapshot_%';
 Variable_name	Value
 Binlog_snapshot_file	master-bin.000001
-Binlog_snapshot_position	486
+Binlog_snapshot_position	487
 BEGIN;
 INSERT INTO t1 VALUES (0, "");
 # Connection con1
@@ -38,10 +38,10 @@ a	b
 SHOW STATUS LIKE 'binlog_snapshot_%';
 Variable_name	Value
 Binlog_snapshot_file	master-bin.000001
-Binlog_snapshot_position	988
+Binlog_snapshot_position	989
 SHOW MASTER STATUS;
 File	Position	Binlog_Do_DB	Binlog_Ignore_DB
-master-bin.000001	1340		
+master-bin.000001	1341		
 SELECT * FROM t2 ORDER BY a;
 a
 2
@@ -60,50 +60,50 @@ a	b
 SHOW STATUS LIKE 'binlog_snapshot_%';
 Variable_name	Value
 Binlog_snapshot_file	master-bin.000001
-Binlog_snapshot_position	988
+Binlog_snapshot_position	989
 SHOW MASTER STATUS;
 File	Position	Binlog_Do_DB	Binlog_Ignore_DB
-master-bin.000002	367		
+master-bin.000002	368		
 COMMIT;
 SHOW STATUS LIKE 'binlog_snapshot_%';
 Variable_name	Value
 Binlog_snapshot_file	master-bin.000002
-Binlog_snapshot_position	367
+Binlog_snapshot_position	368
 SHOW MASTER STATUS;
 File	Position	Binlog_Do_DB	Binlog_Ignore_DB
-master-bin.000002	367		
+master-bin.000002	368		
 SHOW BINLOG EVENTS;
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
-master-bin.000001	4	Format_desc	1	248	Server ver: #, Binlog ver: #
-master-bin.000001	248	Gtid_list	1	273	[]
-master-bin.000001	273	Binlog_checkpoint	1	313	master-bin.000001
-master-bin.000001	313	Gtid	1	351	GTID 0-1-1
-master-bin.000001	351	Query	1	486	use `test`; CREATE TABLE t1 (a INT, b VARCHAR(100), PRIMARY KEY (a,b)) ENGINE=innodb
-master-bin.000001	486	Gtid	1	524	GTID 0-1-2
-master-bin.000001	524	Query	1	636	use `test`; CREATE TABLE t2 (a INT PRIMARY KEY) ENGINE=myisam
-master-bin.000001	636	Gtid	1	674	BEGIN GTID 0-1-3
-master-bin.000001	674	Query	1	762	use `test`; INSERT INTO t2 VALUES (2)
-master-bin.000001	762	Query	1	831	COMMIT
-master-bin.000001	831	Gtid	1	869	BEGIN GTID 0-1-4
-master-bin.000001	869	Query	1	961	use `test`; INSERT INTO t1 VALUES (0, "")
-master-bin.000001	961	Xid	1	988	COMMIT /* XID */
-master-bin.000001	988	Gtid	1	1026	BEGIN GTID 0-1-5
-master-bin.000001	1026	Query	1	1114	use `test`; INSERT INTO t2 VALUES (3)
-master-bin.000001	1114	Query	1	1183	COMMIT
-master-bin.000001	1183	Gtid	1	1221	BEGIN GTID 0-1-6
-master-bin.000001	1221	Query	1	1313	use `test`; INSERT INTO t1 VALUES (4, "")
-master-bin.000001	1313	Xid	1	1340	COMMIT /* XID */
-master-bin.000001	1340	Gtid	1	1378	BEGIN GTID 0-1-7
-master-bin.000001	1378	Query	1	1470	use `test`; INSERT INTO t1 VALUES (1, "")
-master-bin.000001	1470	Xid	1	1497	COMMIT /* XID */
-master-bin.000001	1497	Gtid	1	1535	BEGIN GTID 0-1-8
-master-bin.000001	1535	Query	1	1632	use `test`; INSERT INTO t1 VALUES (2, "first")
-master-bin.000001	1632	Query	1	1730	use `test`; INSERT INTO t1 VALUES (2, "second")
-master-bin.000001	1730	Xid	1	1757	COMMIT /* XID */
-master-bin.000001	1757	Gtid	1	1795	BEGIN GTID 0-1-9
-master-bin.000001	1795	Query	1	1887	use `test`; INSERT INTO t1 VALUES (3, "")
-master-bin.000001	1887	Xid	1	1914	COMMIT /* XID */
-master-bin.000001	1914	Rotate	1	1958	master-bin.000002;pos=4
+master-bin.000001	4	Format_desc	1	249	Server ver: #, Binlog ver: #
+master-bin.000001	249	Gtid_list	1	274	[]
+master-bin.000001	274	Binlog_checkpoint	1	314	master-bin.000001
+master-bin.000001	314	Gtid	1	352	GTID 0-1-1
+master-bin.000001	352	Query	1	487	use `test`; CREATE TABLE t1 (a INT, b VARCHAR(100), PRIMARY KEY (a,b)) ENGINE=innodb
+master-bin.000001	487	Gtid	1	525	GTID 0-1-2
+master-bin.000001	525	Query	1	637	use `test`; CREATE TABLE t2 (a INT PRIMARY KEY) ENGINE=myisam
+master-bin.000001	637	Gtid	1	675	BEGIN GTID 0-1-3
+master-bin.000001	675	Query	1	763	use `test`; INSERT INTO t2 VALUES (2)
+master-bin.000001	763	Query	1	832	COMMIT
+master-bin.000001	832	Gtid	1	870	BEGIN GTID 0-1-4
+master-bin.000001	870	Query	1	962	use `test`; INSERT INTO t1 VALUES (0, "")
+master-bin.000001	962	Xid	1	989	COMMIT /* XID */
+master-bin.000001	989	Gtid	1	1027	BEGIN GTID 0-1-5
+master-bin.000001	1027	Query	1	1115	use `test`; INSERT INTO t2 VALUES (3)
+master-bin.000001	1115	Query	1	1184	COMMIT
+master-bin.000001	1184	Gtid	1	1222	BEGIN GTID 0-1-6
+master-bin.000001	1222	Query	1	1314	use `test`; INSERT INTO t1 VALUES (4, "")
+master-bin.000001	1314	Xid	1	1341	COMMIT /* XID */
+master-bin.000001	1341	Gtid	1	1379	BEGIN GTID 0-1-7
+master-bin.000001	1379	Query	1	1471	use `test`; INSERT INTO t1 VALUES (1, "")
+master-bin.000001	1471	Xid	1	1498	COMMIT /* XID */
+master-bin.000001	1498	Gtid	1	1536	BEGIN GTID 0-1-8
+master-bin.000001	1536	Query	1	1633	use `test`; INSERT INTO t1 VALUES (2, "first")
+master-bin.000001	1633	Query	1	1731	use `test`; INSERT INTO t1 VALUES (2, "second")
+master-bin.000001	1731	Xid	1	1758	COMMIT /* XID */
+master-bin.000001	1758	Gtid	1	1796	BEGIN GTID 0-1-9
+master-bin.000001	1796	Query	1	1888	use `test`; INSERT INTO t1 VALUES (3, "")
+master-bin.000001	1888	Xid	1	1915	COMMIT /* XID */
+master-bin.000001	1915	Rotate	1	1959	master-bin.000002;pos=4
 *** MDEV-7310: last_commit_pos_offset set to wrong value after binlog rotate in group commit ***
 SET @old_size= @@GLOBAL.max_binlog_size;
 SET GLOBAL max_binlog_size=4096;
