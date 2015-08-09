@@ -1707,14 +1707,20 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       // In provisioning mode, master starts sending data from current position
       if (flags & BINLOG_DUMP_PROVISIONING_MODE)
       {
-        DBUG_ASSERT(mysql_bin_log.is_open());
-
-        LOG_INFO li;
-        mysql_bin_log.get_current_log(&li);
-        size_t dir_len= dirname_length(li.log_file_name);
-        log_ident= thd->strmake(li.log_file_name + dir_len,
-                                strlen(li.log_file_name) - dir_len);
-        pos= li.pos;
+        if (mysql_bin_log.is_open())
+        {
+          LOG_INFO li;
+          mysql_bin_log.get_current_log(&li);
+          size_t dir_len= dirname_length(li.log_file_name);
+          log_ident= thd->strmake(li.log_file_name + dir_len,
+                                  strlen(li.log_file_name) - dir_len);
+          pos= li.pos;
+        }
+        else
+        {
+          my_message(ER_NO_BINARY_LOGGING, ER(ER_NO_BINARY_LOGGING), MYF(0));
+          error= TRUE;
+        }
       }
       else
       {
@@ -1727,18 +1733,21 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
         kill_zombie_dump_threads(slave_server_id);
       thd->variables.server_id= slave_server_id;
 
-      general_log_print(thd, command, "Log: '%s'  Pos: %ld", log_ident,
-                        (long)pos);
+      if (!error)
+      {
+        general_log_print(thd, command, "Log: '%s'  Pos: %ld", log_ident,
+                          (long)pos);
 
-      // FIXME - Farnham
-      // Remove log
-      sql_print_information("Send start");
+        // FIXME - Farnham
+        // Remove log
+        sql_print_information("Send start");
 
-      mysql_binlog_send(thd, log_ident, pos, flags);
+        mysql_binlog_send(thd, log_ident, pos, flags);
 
-      // FIXME - Farnham
-      // Remove log
-      sql_print_information("Send end");
+        // FIXME - Farnham
+        // Remove log
+        sql_print_information("Send end");
+      }
 
       unregister_slave(thd, 1, 1);
       /* Fake COM_QUIT -- if we get here, the thread needs to terminate */
