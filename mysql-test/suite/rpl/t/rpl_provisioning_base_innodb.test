@@ -1,0 +1,5 @@
+# InnoDB version of base provisioning test case
+
+--source include/have_innodb.inc
+let $engine_type= 'InnoDB';
+--source suite/rpl/t/rpl_provisioning_base.inc

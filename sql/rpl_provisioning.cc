@@ -10,6 +10,7 @@
 #include "set_var.h"
 #include "sp.h"
 #include "sp_head.h"
+#include "transaction.h"
 
 /*
   Quotes a string using backticks
@@ -147,12 +148,8 @@ bool provisioning_send_info::open_table(TABLE_LIST* table_list,
 
 void provisioning_send_info::close_tables()
 {
+  trans_commit_stmt(thd);
   close_thread_tables(thd);
-
-  // FIXME - Farnham
-  // Where were these locks acquired? Can we release them here?
-  // If they are not released, cleanup drop table statement from test
-  // causes deadlock during meta data locking
   thd->mdl_context.release_transactional_locks();
 }
 
@@ -672,11 +669,6 @@ int8 provisioning_send_info::send_table_data()
   handler *hdl= table->file;
   DBUG_ASSERT(hdl);
 
-  // When building log events, table->write_set is used to determine
-  // which columns should be written, as we are sending everything to slave,
-  // set all bits
-  bitmap_set_all(table->write_set);
-
   // Initialize scan from last remembered position - can be NULL but it is
   // valid function argument
   if ((error= hdl->prepare_range_scan(row_batch_end, NULL)) != 0)
@@ -699,6 +691,9 @@ int8 provisioning_send_info::send_table_data()
     close_tables();
     return 1;
   }
+
+  // Use all columns for event building
+  table->use_all_columns();
 
   // Default result, error
   int8 result= 1;
@@ -785,6 +780,7 @@ error:
     result= 1;
   }
 
+  table->default_column_bitmaps();
   close_tables();
   return result;
 }

@@ -1,0 +1,4 @@
+# MyISAM version of base provisioning test case
+
+let $engine_type= 'MyISAM';
+--source suite/rpl/t/rpl_provisioning_base.inc

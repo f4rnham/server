@@ -1,6 +1,5 @@
-# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
-# Tested functionality of LOAD DATA FROM MASTER - transfer of table and
-# database structures + table rows
+# Basic provisioning test, testing transfer of database / table structures,
+# views, triggers, procedures
 
 --source include/rpl_provisioning_init.inc
 
@@ -8,8 +7,8 @@
 --connection master
 RESET MASTER;
 
-CREATE TABLE test.test_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a));
+eval CREATE TABLE test.test_1 (a int, PRIMARY KEY (a)) ENGINE=$engine_type;
+eval CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a)) ENGINE=$engine_type;
 
 INSERT INTO test.test_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test.test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
@@ -17,7 +16,7 @@ INSERT INTO test.test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
 CREATE VIEW test.v_1 AS SELECT test.test_1.a FROM test.test_1;
 
 # Create table with 100 rows
-CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a));
+eval CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a)) ENGINE=$engine_type;
 DELIMITER |;
 CREATE PROCEDURE test.fill_big_table()
 BEGIN
@@ -40,8 +39,8 @@ END|
 DELIMITER ;|
 
 CREATE DATABASE test2;
-CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a));
+eval CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a)) ENGINE=$engine_type;
+eval CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a)) ENGINE=$engine_type;
 
 INSERT INTO test2.test2_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);

@@ -5,12 +5,12 @@ RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 RESET MASTER;
-CREATE TABLE test.test_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a));
+CREATE TABLE test.test_1 (a int, PRIMARY KEY (a)) ENGINE='MyISAM';
+CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a)) ENGINE='MyISAM';
 INSERT INTO test.test_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test.test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
 CREATE VIEW test.v_1 AS SELECT test.test_1.a FROM test.test_1;
-CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a));
+CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a)) ENGINE='MyISAM';
 CREATE PROCEDURE test.fill_big_table()
 BEGIN
 DECLARE v1 INT DEFAULT 100;
@@ -27,8 +27,8 @@ BEGIN
 SET @test_var= 1;
 END|
 CREATE DATABASE test2;
-CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a));
-CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a));
+CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a)) ENGINE='MyISAM';
+CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a)) ENGINE='MyISAM';
 INSERT INTO test2.test2_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 LOAD DATA FROM MASTER;
