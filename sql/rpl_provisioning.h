@@ -89,15 +89,21 @@ enum provisioning_phase
 /*
   Structure holding data for log events, requiring character
   set and collation changes
+
+  Note: Default constructor is initializing ONLY <code>time_zone_len</code>,
+  other members do not require it in current code
 */
 
 struct provisioning_cs_info
 {
+  provisioning_cs_info() : time_zone_len(0) { }
+
   uint32 cs_client;
   uint32 cl_connection;
-  uint32 cl_server; // UNUSED
   uint32 cl_db;
   ulonglong sql_mode;
+  uint32 time_zone_len;
+  char const *time_zone_str;
 };
 
 /*

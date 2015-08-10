@@ -14,6 +14,7 @@
 #include "event_data_objects.h"
 #include "events.h"
 #include "event_db_repository.h"
+#include "tztime.h"
 
 /*
   Quotes a string using backticks
@@ -256,6 +257,9 @@ bool provisioning_send_info::send_query_log_event(char const *query,
 
     evt.sql_mode_inited= 1;
     evt.sql_mode= cs_info->sql_mode;
+
+    evt.time_zone_len= cs_info->time_zone_len;
+    evt.time_zone_str= cs_info->time_zone_len ? cs_info->time_zone_str : NULL;
   }
 
   bool res= false;
@@ -1074,6 +1078,9 @@ bool provisioning_send_info::send_create_events()
     cs_info.cs_client= et.creation_ctx->get_client_cs()->number;
 
     cs_info.sql_mode= et.sql_mode;
+
+    cs_info.time_zone_len= et.time_zone->get_name()->length();
+    cs_info.time_zone_str= et.time_zone->get_name()->ptr();
 
     char show_str_buf[10 * STRING_BUFFER_USUAL_SIZE];
     String show_str(show_str_buf, sizeof(show_str_buf), system_charset_info);

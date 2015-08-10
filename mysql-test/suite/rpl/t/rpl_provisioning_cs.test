@@ -43,6 +43,7 @@ SET @@local.character_set_connection= 'utf8';
 SET @@local.character_set_client= 'utf8';
 ALTER DATABASE test CHARACTER SET utf8 COLLATE utf8_general_ci;
 SET sql_mode= 'ANSI_QUOTES';
+SET time_zone= '+9:00';
 
 DELIMITER |;
 

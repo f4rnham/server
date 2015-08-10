@@ -31,6 +31,7 @@ SET @@local.character_set_connection= 'utf8';
 SET @@local.character_set_client= 'utf8';
 ALTER DATABASE test CHARACTER SET utf8 COLLATE utf8_general_ci;
 SET sql_mode= 'ANSI_QUOTES';
+SET time_zone= '+9:00';
 CREATE PROCEDURE `test`.`py`()
 BEGIN
 SELECT CHARSET('a');
@@ -124,7 +125,7 @@ Database Collation	latin1_swedish_ci
 SHOW CREATE EVENT test.ey;
 Event	ey
 sql_mode	ANSI_QUOTES
-time_zone	SYSTEM
+time_zone	+09:00
 Create Event	CREATE DEFINER="root"@"localhost" EVENT "ey" ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE ENABLE DO SELECT 1
 character_set_client	utf8
 collation_connection	utf8_general_ci
@@ -216,7 +217,7 @@ Database Collation	utf8_general_ci
 SHOW CREATE EVENT test.ey;
 Event	ey
 sql_mode	ANSI_QUOTES
-time_zone	SYSTEM
+time_zone	+09:00
 Create Event	CREATE DEFINER=`root`@`localhost` EVENT `ey` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO SELECT 1
 character_set_client	utf8
 collation_connection	utf8_general_ci
