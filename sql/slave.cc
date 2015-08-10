@@ -4075,19 +4075,16 @@ requesting master dump") ||
           try_to_reconnect(thd, mysql, mi, &retry_count, suppress_warnings,
                            reconnect_messages[SLAVE_RECON_ACT_DUMP]))
       {
-        DBUG_EXECUTE_IF("provisioning_test_running",
-                        /*os_event_set(mi->dump_requested_semaphore);*/
-                        mi->dump_requested_semaphore= 1;);
-
         goto err;
       }
 
       goto connected;
     }
 
+    // "Unlock" waiting command handling thread after dump has been
+    // successfully requested from master
     DBUG_EXECUTE_IF("provisioning_test_running",
-                    /*os_event_set(mi->dump_requested_semaphore);*/
-                    mi->dump_requested_semaphore= 1;);
+                    mi->dump_requested_semaphore= true;);
 
     DBUG_EXECUTE_IF("FORCE_SLAVE_TO_RECONNECT_DUMP", 
       if (!retry_count_dump)
@@ -4289,6 +4286,12 @@ err:
   mysql_mutex_lock(&mi->run_lock);
 
 err_during_init:
+
+  // "Unlock" waiting command handling thread to prevent deadlock if eny error
+  // occurs before successful dump request
+  DBUG_EXECUTE_IF("provisioning_test_running",
+                  mi->dump_requested_semaphore= true;);
+
   /* Forget the relay log's format */
   delete mi->rli.relay_log.description_event_for_queue;
   mi->rli.relay_log.description_event_for_queue= 0;

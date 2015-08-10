@@ -3326,14 +3326,14 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
       thread_mask))
   {
     slave_errno= ER_MASTER_INFO;
+    unlock_slave_threads(mi);
   }
   else
   {
     DBUG_ASSERT(!mi->slave_running && !mi->rli.slave_running);
 
     DBUG_EXECUTE_IF("provisioning_test_running",
-                    /*os_event_create();*/
-                    mi->dump_requested_semaphore= 0;);
+                    mi->dump_requested_semaphore= false;);
 
     slave_errno = start_slave_threads(thd,
                                       0 /*no mutex */,
@@ -3343,12 +3343,15 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
                                       relay_log_info_file_tmp,
                                       thread_mask, true);
 
+    // Needs to be above DBUG_EXECUTE_IF(...)
+    unlock_slave_threads(mi);
+
     DBUG_EXECUTE_IF("provisioning_test_running",
-                    /*os_event_wait(mi->dump_requested_semaphore);*/
-                    while (!mi->dump_requested_semaphore) ;);
+                    if (!slave_errno)
+                      while (!mi->dump_requested_semaphore)
+                        /* pass */;);
   }
 
-  unlock_slave_threads(mi);
   thd_proc_info(thd, 0);
 
   if (slave_errno)

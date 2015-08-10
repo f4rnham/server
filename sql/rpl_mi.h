@@ -238,11 +238,10 @@ class Master_info : public Slave_reporting_capability
     Normally command starts IO thread and ends immediately, in test cases
     command handling thread waits for IO thread.
 
-    FIXME - Farnham
-    Make this an actual semaphore - os_event_t, available only in innodb and
-    xtradb source folders
+    Note: Currently implemented as non-atomic spinlock, but for test cases it
+    is good enough
   */
-  uint8 dump_requested_semaphore;
+  volatile bool dump_requested_semaphore;
 #endif
   bool inited;
   volatile bool abort_slave;

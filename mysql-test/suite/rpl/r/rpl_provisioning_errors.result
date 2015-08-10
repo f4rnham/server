@@ -52,6 +52,14 @@ RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE IF EXISTS test;
 DROP TABLE test.t2;
+CHANGE MASTER TO MASTER_USER= '';
+LOAD DATA FROM MASTER;
+call mtr.add_suppression("Slave I/O: Fatal error: Invalid .* username when attempting to connect to the master server. Connection attempt terminated. Internal MariaDB error code: 1593");
+include/wait_for_slave_io_error.inc [errno=1593]
+Last_IO_Error = 'Fatal error: Invalid (empty) username when attempting to connect to the master server. Connection attempt terminated.'
+STOP SLAVE;
+RESET SLAVE;
+CHANGE MASTER TO MASTER_USE_GTID= slave_pos, MASTER_USER= 'root';
 SET GLOBAL debug_dbug="";
 SET GLOBAL debug_dbug="";
 CREATE DATABASE test;
