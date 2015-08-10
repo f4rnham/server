@@ -31,6 +31,9 @@ CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a)) ENGINE='InnoDB';
 CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a)) ENGINE='InnoDB';
 INSERT INTO test2.test2_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
+CREATE EVENT test.ev
+ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
+DO UPDATE test.test_1 SET a= 0 WHERE 0;|
 LOAD DATA FROM MASTER;
 include/wait_for_slave_sql_to_stop.inc
 SHOW CREATE DATABASE test;
@@ -85,6 +88,9 @@ INSERT big_table VALUES (NULL);
 SET v1 = v1 - 1;
 END WHILE;
 END	latin1	latin1_swedish_ci	latin1_swedish_ci
+SHOW CREATE EVENT test.ev;
+Event	sql_mode	time_zone	Create Event	character_set_client	collation_connection	Database Collation
+ev		SYSTEM	CREATE DEFINER=`root`@`localhost` EVENT `ev` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO UPDATE test.test_1 SET a= 0 WHERE 0	latin1	latin1_swedish_ci	latin1_swedish_ci
 SELECT * FROM test.test_1 ORDER BY a;
 a
 1
@@ -227,6 +233,7 @@ DROP TABLE test.big_table;
 DROP DATABASE test2;
 DROP VIEW test.v_1;
 DROP PROCEDURE test.fill_big_table;
+DROP EVENT test.ev;
 SET GLOBAL debug_dbug="";
 DROP TABLE test.test_1;
 DROP TABLE test.test_2;
@@ -234,5 +241,6 @@ DROP TABLE test.big_table;
 DROP DATABASE test2;
 DROP VIEW test.v_1;
 DROP PROCEDURE test.fill_big_table;
+DROP EVENT test.ev;
 SET GLOBAL debug_dbug="";
 include/rpl_end.inc

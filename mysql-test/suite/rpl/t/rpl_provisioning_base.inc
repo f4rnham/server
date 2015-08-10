@@ -45,6 +45,12 @@ eval CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a)) ENGINE=$engine_t
 INSERT INTO test2.test2_1 VALUES (1), (2), (3), (4), (5);
 INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 
+DELIMITER |;
+CREATE EVENT test.ev
+ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
+DO UPDATE test.test_1 SET a= 0 WHERE 0;|
+DELIMITER ;|
+
 # Start provisioning
 --connection slave
 LOAD DATA FROM MASTER;
@@ -65,6 +71,8 @@ SHOW CREATE VIEW test.v_1;
 
 SHOW CREATE PROCEDURE test.fill_big_table;
 
+SHOW CREATE EVENT test.ev;
+
 # Check if row data were transferred
 SELECT * FROM test.test_1 ORDER BY a;
 SELECT * FROM test.test_2 ORDER BY a;
@@ -83,6 +91,7 @@ DROP TABLE test.big_table;
 DROP DATABASE test2;
 DROP VIEW test.v_1;
 DROP PROCEDURE test.fill_big_table;
+DROP EVENT test.ev;
 SET GLOBAL debug_dbug="";
 
 --connection slave
@@ -92,6 +101,7 @@ DROP TABLE test.big_table;
 DROP DATABASE test2;
 DROP VIEW test.v_1;
 DROP PROCEDURE test.fill_big_table;
+DROP EVENT test.ev;
 SET GLOBAL debug_dbug="";
 
 --let $rpl_only_running_threads= 1

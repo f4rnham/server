@@ -11,6 +11,9 @@ CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
 CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`select` (`where` int, PRIMARY KEY (`WHERE`));
 INSERT INTO `_@_*_$_'_ _\t_\x_"_``_`.`select` VALUES (1), (2), (3), (4), (5);
 CREATE DATABASE `select`;
+CREATE EVENT test.`_@_*_$_'_ _\t_\x_"_``_`
+ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
+DO SELECT 1;|
 LOAD DATA FROM MASTER;
 include/wait_for_slave_sql_to_stop.inc
 SHOW CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
@@ -31,6 +34,9 @@ select	CREATE TABLE `select` (
 SHOW CREATE DATABASE `select`;
 Database	Create Database
 select	CREATE DATABASE `select` /*!40100 DEFAULT CHARACTER SET latin1 */
+SHOW CREATE EVENT test.`_@_*_$_'_ _\t_\x_"_``_`;
+Event	sql_mode	time_zone	Create Event	character_set_client	collation_connection	Database Collation
+_@_*_$_'_ _\t_\x_"_`_		SYSTEM	CREATE DEFINER=`root`@`localhost` EVENT `_@_*_$_'_ _\t_\x_"_``_` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO SELECT 1	latin1	latin1_swedish_ci	latin1_swedish_ci
 SELECT * FROM test.`_@_*_$_'_ _\t_\x_"_``_`;
 _@_*_$_'_ _\t_\x_"_`_
 1
@@ -48,9 +54,11 @@ where
 DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `select`;
+DROP EVENT test.`_@_*_$_'_ _\t_\x_"_``_`;
 SET GLOBAL debug_dbug="";
 DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `select`;
+DROP EVENT test.`_@_*_$_'_ _\t_\x_"_``_`;
 SET GLOBAL debug_dbug="";
 include/rpl_end.inc

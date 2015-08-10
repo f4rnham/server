@@ -11,6 +11,9 @@
 #include "sp.h"
 #include "sp_head.h"
 #include "transaction.h"
+#include "event_data_objects.h"
+#include "events.h"
+#include "event_db_repository.h"
 
 /*
   Quotes a string using backticks
@@ -925,10 +928,8 @@ bool provisioning_send_info::send_create_routines()
   char const *routine_type[]= { "FUNCTION", "PROCEDURE" };
   stored_procedure_type routine_enum_type[]= { TYPE_ENUM_FUNCTION,
     TYPE_ENUM_PROCEDURE };
-  char db_name_buff[NAME_LEN * 2 + 3];
   char db_name_buff_escaped[NAME_LEN * 2 + 3];
 
-  quote_name(database->str, db_name_buff);
   escape_quotes_for_mysql(system_charset_info,
                           db_name_buff_escaped, sizeof(db_name_buff_escaped),
                           database->str, database->length);
@@ -999,6 +1000,94 @@ bool provisioning_send_info::send_create_routines()
       if (send_query_log_event(&sp->m_defstr, false, database, &cs_info))
         return true;
     }
+  }
+
+  return false;
+}
+
+/**
+  Creates and sends 'CREATE EVENT' <code>Query_log_event</code> s
+  for first database in <code>databases</code> list
+
+  @return false - ok
+          true  - error
+ */
+
+bool provisioning_send_info::send_create_events()
+{
+  DBUG_ASSERT(!databases.is_empty());
+
+  LEX_STRING const *database= databases.head();
+  char db_name_buff[NAME_LEN * 2 + 3];
+  quote_name(database->str, db_name_buff);
+
+  DYNAMIC_STRING query;
+  init_dynamic_string(&query, "SHOW EVENTS FROM ", 0, 0);
+  dynstr_append(&query, db_name_buff);
+
+  if (connection->execute_direct(query.str, query.length))
+  {
+    record_ed_connection_error("Failed to query existing events");
+    dynstr_free(&query);
+    return true;
+  }
+
+  dynstr_free(&query);
+  Ed_result_set *result= connection->use_result_set();
+
+  // We are expecting exactly one result set with 15 columns,
+  // in any other case, something went wrong
+  if (!result || result->get_field_count() != 15 ||
+      connection->has_next_result())
+  {
+    error_text= "Failed to read list of events";
+    return true;
+  }
+
+  List<Ed_row>& rows= *result;
+  List_iterator_fast<Ed_row> it(rows);
+
+  for (uint32 j= 0; j < rows.elements; ++j)
+  {
+    Ed_row *row= it++;
+
+    // Field count for entire result set was already checked, recheck
+    // in case of internal inconsistency
+    DBUG_ASSERT(row->size() == 15);
+
+    LEX_STRING const *name= row->get_column(1);
+
+    sql_print_information("Discovered event: %s", name->str);
+      
+    Event_timed et;
+    if (Events::get_db_repository()->load_named_event(thd, *database,
+                                                      *name, &et))
+    {
+      error_text= "Failed to retrieve event data";
+      return true;
+    }
+
+    provisioning_cs_info cs_info;
+    cs_info.cl_connection= et.creation_ctx->get_connection_cl()->number;
+    cs_info.cl_db= et.creation_ctx->get_db_cl()->number;
+
+    cs_info.cs_client= et.creation_ctx->get_client_cs()->number;
+
+    cs_info.sql_mode= et.sql_mode;
+
+    char show_str_buf[10 * STRING_BUFFER_USUAL_SIZE];
+    String show_str(show_str_buf, sizeof(show_str_buf), system_charset_info);
+    show_str.length(0);
+
+    if (et.get_create_event(thd, &show_str))
+    {
+      error_text= "Failed to get CREATE EVENT statement";
+      return true;
+    }
+
+    if (send_query_log_event(show_str.ptr(), show_str.length(), false,
+                             database, &cs_info))
+      return true;
   }
 
   return false;
@@ -1110,7 +1199,9 @@ int8 provisioning_send_info::send_provisioning_data()
     }
     case PROV_PHASE_EVENTS:
     {
-      // NYI
+      if (send_create_events())
+        return 1;
+
       phase= PROV_PHASE_ROUTINES;
       break;
     }

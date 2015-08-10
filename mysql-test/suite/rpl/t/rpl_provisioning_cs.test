@@ -28,10 +28,14 @@ BEGIN
 	RETURN `str`;
 END|
 
-CREATE TRIGGER trg1 BEFORE INSERT ON t1 FOR EACH ROW
+CREATE TRIGGER tx BEFORE INSERT ON t1 FOR EACH ROW
 BEGIN
   SET NEW.a = NEW.a * 2;
 END|
+
+CREATE EVENT test.ex
+ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
+DO SELECT 1;|
 
 DELIMITER ;|
 
@@ -54,10 +58,14 @@ BEGIN
 	RETURN `str`;
 END|
 
-CREATE TRIGGER trg2 BEFORE UPDATE ON t1 FOR EACH ROW
+CREATE TRIGGER ty BEFORE UPDATE ON t1 FOR EACH ROW
 BEGIN
   SET NEW.a = NEW.a * 2;
 END|
+
+CREATE EVENT test.ey
+ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
+DO SELECT 1;|
 
 DELIMITER ;|
 
@@ -68,8 +76,10 @@ query_vertical SHOW CREATE PROCEDURE test.px;
 query_vertical SHOW CREATE PROCEDURE test.py;
 query_vertical SHOW CREATE FUNCTION test.fx;
 query_vertical SHOW CREATE FUNCTION test.fy;
-query_vertical SHOW CREATE TRIGGER test.trg1;
-query_vertical SHOW CREATE TRIGGER test.trg2;
+query_vertical SHOW CREATE TRIGGER test.tx;
+query_vertical SHOW CREATE TRIGGER test.ty;
+query_vertical SHOW CREATE EVENT test.ex;
+query_vertical SHOW CREATE EVENT test.ey;
 
 --echo
 --echo ----- Start provisioning
@@ -87,10 +97,12 @@ query_vertical SHOW CREATE PROCEDURE test.px;
 query_vertical SHOW CREATE PROCEDURE test.py;
 query_vertical SHOW CREATE FUNCTION test.fx;
 query_vertical SHOW CREATE FUNCTION test.fy;
-query_vertical SHOW CREATE TRIGGER test.trg1;
-query_vertical SHOW CREATE TRIGGER test.trg2;
+query_vertical SHOW CREATE TRIGGER test.tx;
+query_vertical SHOW CREATE TRIGGER test.ty;
 CALL `test`.`px`();
 CALL `test`.`py`();
+query_vertical SHOW CREATE EVENT test.ex;
+query_vertical SHOW CREATE EVENT test.ey;
 
 --echo
 --echo ----- Cleanup
@@ -102,6 +114,8 @@ DROP FUNCTION `test`.`fx`;
 DROP FUNCTION `test`.`fy`;
 ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
 DROP TABLE `test`.`t1`;
+DROP EVENT test.ex;
+DROP EVENT test.ey;
 SET GLOBAL debug_dbug="";
 
 --connection slave
@@ -111,6 +125,8 @@ DROP FUNCTION `test`.`fx`;
 DROP FUNCTION `test`.`fy`;
 ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
 DROP TABLE `test`.`t1`;
+DROP EVENT test.ex;
+DROP EVENT test.ey;
 SET GLOBAL debug_dbug="";
 
 --let $rpl_only_running_threads= 1

@@ -20,10 +20,13 @@ BEGIN
 SET @param_coll = COLLATION(`str`);
 RETURN `str`;
 END|
-CREATE TRIGGER trg1 BEFORE INSERT ON t1 FOR EACH ROW
+CREATE TRIGGER tx BEFORE INSERT ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END|
+CREATE EVENT test.ex
+ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
+DO SELECT 1;|
 SET @@local.character_set_connection= 'utf8';
 SET @@local.character_set_client= 'utf8';
 ALTER DATABASE test CHARACTER SET utf8 COLLATE utf8_general_ci;
@@ -38,10 +41,13 @@ BEGIN
 SET @param_coll = COLLATION(`str`);
 RETURN `str`;
 END|
-CREATE TRIGGER trg2 BEFORE UPDATE ON t1 FOR EACH ROW
+CREATE TRIGGER ty BEFORE UPDATE ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END|
+CREATE EVENT test.ey
+ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
+DO SELECT 1;|
 
 ----- Show create statements from master
 
@@ -87,23 +93,39 @@ END
 character_set_client	utf8
 collation_connection	utf8_general_ci
 Database Collation	utf8_general_ci
-SHOW CREATE TRIGGER test.trg1;
-Trigger	trg1
+SHOW CREATE TRIGGER test.tx;
+Trigger	tx
 sql_mode	
-SQL Original Statement	CREATE DEFINER=`root`@`localhost` TRIGGER trg1 BEFORE INSERT ON t1 FOR EACH ROW
+SQL Original Statement	CREATE DEFINER=`root`@`localhost` TRIGGER tx BEFORE INSERT ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END
 character_set_client	latin1
 collation_connection	latin1_swedish_ci
 Database Collation	latin1_swedish_ci
-SHOW CREATE TRIGGER test.trg2;
-Trigger	trg2
+SHOW CREATE TRIGGER test.ty;
+Trigger	ty
 sql_mode	ANSI_QUOTES
-SQL Original Statement	CREATE DEFINER="root"@"localhost" TRIGGER trg2 BEFORE UPDATE ON t1 FOR EACH ROW
+SQL Original Statement	CREATE DEFINER="root"@"localhost" TRIGGER ty BEFORE UPDATE ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END
+character_set_client	utf8
+collation_connection	utf8_general_ci
+Database Collation	utf8_general_ci
+SHOW CREATE EVENT test.ex;
+Event	ex
+sql_mode	
+time_zone	SYSTEM
+Create Event	CREATE DEFINER="root"@"localhost" EVENT "ex" ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE ENABLE DO SELECT 1
+character_set_client	latin1
+collation_connection	latin1_swedish_ci
+Database Collation	latin1_swedish_ci
+SHOW CREATE EVENT test.ey;
+Event	ey
+sql_mode	ANSI_QUOTES
+time_zone	SYSTEM
+Create Event	CREATE DEFINER="root"@"localhost" EVENT "ey" ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE ENABLE DO SELECT 1
 character_set_client	utf8
 collation_connection	utf8_general_ci
 Database Collation	utf8_general_ci
@@ -157,20 +179,20 @@ END
 character_set_client	utf8
 collation_connection	utf8_general_ci
 Database Collation	utf8_general_ci
-SHOW CREATE TRIGGER test.trg1;
-Trigger	trg1
+SHOW CREATE TRIGGER test.tx;
+Trigger	tx
 sql_mode	
-SQL Original Statement	CREATE DEFINER=`root`@`localhost` TRIGGER trg1 BEFORE INSERT ON t1 FOR EACH ROW
+SQL Original Statement	CREATE DEFINER=`root`@`localhost` TRIGGER tx BEFORE INSERT ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END
 character_set_client	latin1
 collation_connection	latin1_swedish_ci
 Database Collation	utf8_general_ci
-SHOW CREATE TRIGGER test.trg2;
-Trigger	trg2
+SHOW CREATE TRIGGER test.ty;
+Trigger	ty
 sql_mode	ANSI_QUOTES
-SQL Original Statement	CREATE DEFINER="root"@"localhost" TRIGGER trg2 BEFORE UPDATE ON t1 FOR EACH ROW
+SQL Original Statement	CREATE DEFINER="root"@"localhost" TRIGGER ty BEFORE UPDATE ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
 END
@@ -183,6 +205,22 @@ latin1
 CALL `test`.`py`();
 CHARSET('a')
 utf8
+SHOW CREATE EVENT test.ex;
+Event	ex
+sql_mode	
+time_zone	SYSTEM
+Create Event	CREATE DEFINER=`root`@`localhost` EVENT `ex` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO SELECT 1
+character_set_client	latin1
+collation_connection	latin1_swedish_ci
+Database Collation	utf8_general_ci
+SHOW CREATE EVENT test.ey;
+Event	ey
+sql_mode	ANSI_QUOTES
+time_zone	SYSTEM
+Create Event	CREATE DEFINER=`root`@`localhost` EVENT `ey` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO SELECT 1
+character_set_client	utf8
+collation_connection	utf8_general_ci
+Database Collation	utf8_general_ci
 
 ----- Cleanup
 
@@ -192,6 +230,8 @@ DROP FUNCTION `test`.`fx`;
 DROP FUNCTION `test`.`fy`;
 ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
 DROP TABLE `test`.`t1`;
+DROP EVENT test.ex;
+DROP EVENT test.ey;
 SET GLOBAL debug_dbug="";
 DROP PROCEDURE `test`.`px`;
 DROP PROCEDURE `test`.`py`;
@@ -199,5 +239,7 @@ DROP FUNCTION `test`.`fx`;
 DROP FUNCTION `test`.`fy`;
 ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
 DROP TABLE `test`.`t1`;
+DROP EVENT test.ex;
+DROP EVENT test.ey;
 SET GLOBAL debug_dbug="";
 include/rpl_end.inc
