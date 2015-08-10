@@ -1,6 +1,6 @@
-# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
-# Tested functionality of LOAD DATA FROM MASTER - updating or data when they are not
-# sent to slave yet
+# MDEV-7502 Automatic provisioning of slave
+# Tested functionality of LOAD DATA FROM MASTER - manipulation with data not
+# yet present on slave
 
 --source include/rpl_provisioning_init.inc
 

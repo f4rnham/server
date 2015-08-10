@@ -1,5 +1,6 @@
-# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
-# Tested functionality of LOAD DATA FROM MASTER - masters binlog_format != ROW
+# MDEV-7502 Automatic provisioning of slave
+# Tested functionality of LOAD DATA FROM MASTER - Fail after receiving
+# query event when masters binlog_format != ROW
 
 --let $invert_binlog_format= 1
 --source include/rpl_provisioning_init.inc

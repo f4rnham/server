@@ -43,6 +43,7 @@ if ($invert_binlog_format)
 }
 
 # Start regular replication
+--let $rpl_skip_start_slave= 1
 --source include/master-slave.inc
 
 # Enable debug code required for testing, for example ignore 'mtr' database
@@ -51,10 +52,8 @@ SET GLOBAL debug_dbug="+d,provisioning_test_running";
 --connection master
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 
-# Stop and reset slave before provisioning
+# Prepare slave for provisioning
 --connection slave
---source include/stop_slave.inc
-RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 

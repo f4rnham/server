@@ -1,6 +1,6 @@
-# Generic / temporary test for MDEV-7502 Automatic provisioning of slave
+# MDEV-7502 Automatic provisioning of slave
 # Tested functionality of LOAD DATA FROM MASTER - provisioning of objects
-# with special character sets, collations and sql modes
+# with specific character sets, collations, sql modes and time zones
 
 --source include/rpl_provisioning_init.inc
 
