@@ -8,8 +8,6 @@
 --echo ----- Creating objects
 --echo
 --connection master
-RESET MASTER;
-
 USE `test`;
 
 CREATE TABLE `t1` (a int, PRIMARY KEY (a));
@@ -105,30 +103,4 @@ CALL `test`.`py`();
 query_vertical SHOW CREATE EVENT test.ex;
 query_vertical SHOW CREATE EVENT test.ey;
 
---echo
---echo ----- Cleanup
---echo
---connection master
-DROP PROCEDURE `test`.`px`;
-DROP PROCEDURE `test`.`py`;
-DROP FUNCTION `test`.`fx`;
-DROP FUNCTION `test`.`fy`;
-ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
-DROP TABLE `test`.`t1`;
-DROP EVENT test.ex;
-DROP EVENT test.ey;
-SET GLOBAL debug_dbug="";
-
---connection slave
-DROP PROCEDURE `test`.`px`;
-DROP PROCEDURE `test`.`py`;
-DROP FUNCTION `test`.`fx`;
-DROP FUNCTION `test`.`fy`;
-ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
-DROP TABLE `test`.`t1`;
-DROP EVENT test.ex;
-DROP EVENT test.ey;
-SET GLOBAL debug_dbug="";
-
---let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl_provisioning_end.inc

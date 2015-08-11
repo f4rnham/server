@@ -3,7 +3,6 @@ SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
-RESET MASTER;
 CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_` (`_@_*_$_'_ _\t_\x_"_``_` int, PRIMARY KEY (`_@_*_$_'_ _\t_\x_"_``_`));
 INSERT INTO test.`_@_*_$_'_ _\t_\x_"_``_` VALUES (1), (2), (3), (4), (5);
 CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
@@ -50,14 +49,15 @@ where
 3
 4
 5
-DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `select`;
-DROP EVENT test.`_@_*_$_'_ _\t_\x_"_``_`;
-SET GLOBAL debug_dbug="";
-DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `select`;
-DROP EVENT test.`_@_*_$_'_ _\t_\x_"_``_`;
+include/rpl_provisioning_end.inc
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
 SET GLOBAL debug_dbug="";
-include/rpl_end.inc
+SET GLOBAL debug_dbug="";
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
+RESET SLAVE;

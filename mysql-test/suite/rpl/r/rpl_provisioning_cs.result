@@ -6,7 +6,6 @@ DROP DATABASE test;
 
 ----- Creating objects
 
-RESET MASTER;
 USE `test`;
 CREATE TABLE `t1` (a int, PRIMARY KEY (a));
 CREATE PROCEDURE `test`.`px`()
@@ -221,25 +220,11 @@ Create Event	CREATE DEFINER=`root`@`localhost` EVENT `ey` ON SCHEDULE EVERY 1024
 character_set_client	utf8
 collation_connection	utf8_general_ci
 Database Collation	utf8_general_ci
-
------ Cleanup
-
-DROP PROCEDURE `test`.`px`;
-DROP PROCEDURE `test`.`py`;
-DROP FUNCTION `test`.`fx`;
-DROP FUNCTION `test`.`fy`;
-ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
-DROP TABLE `test`.`t1`;
-DROP EVENT test.ex;
-DROP EVENT test.ey;
+include/rpl_provisioning_end.inc
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
 SET GLOBAL debug_dbug="";
-DROP PROCEDURE `test`.`px`;
-DROP PROCEDURE `test`.`py`;
-DROP FUNCTION `test`.`fx`;
-DROP FUNCTION `test`.`fy`;
-ALTER DATABASE test CHARACTER SET latin1 COLLATE latin1_swedish_ci;
-DROP TABLE `test`.`t1`;
-DROP EVENT test.ex;
-DROP EVENT test.ey;
 SET GLOBAL debug_dbug="";
-include/rpl_end.inc
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
+RESET SLAVE;

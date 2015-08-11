@@ -46,16 +46,4 @@ STOP SLAVE;
 --let $diff_tables= master:test.tab , slave:test.tab
 --source include/diff_tables.inc
 
-# Cleanup
---connection master
-DROP DATABASE test;
-CREATE DATABASE test;
-SET GLOBAL debug_dbug="";
-
---connection slave
-DROP DATABASE test;
-CREATE DATABASE test;
-SET GLOBAL debug_dbug="";
-
---let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl_provisioning_end.inc

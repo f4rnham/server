@@ -60,7 +60,11 @@ Last_IO_Error = 'Fatal error: Invalid (empty) username when attempting to connec
 STOP SLAVE;
 RESET SLAVE;
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos, MASTER_USER= 'root';
-SET GLOBAL debug_dbug="";
-SET GLOBAL debug_dbug="";
+include/rpl_provisioning_end.inc
+DROP DATABASE IF EXISTS test;
 CREATE DATABASE test;
-include/rpl_end.inc
+SET GLOBAL debug_dbug="";
+SET GLOBAL debug_dbug="";
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
+RESET SLAVE;

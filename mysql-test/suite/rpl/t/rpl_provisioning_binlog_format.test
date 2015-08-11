@@ -23,14 +23,4 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 --source include/wait_for_slave_sql_error.inc
 
 # Cleanup
---connection master
-SET GLOBAL debug_dbug="";
-DROP TABLE test.t1;
-
---connection slave
-SET GLOBAL debug_dbug="";
-CREATE DATABASE test;
-RESET SLAVE;
-
---let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl_provisioning_end.inc

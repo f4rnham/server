@@ -6,8 +6,6 @@
 
 # Create databases and tables on master + fill them with data
 --connection master
-RESET MASTER;
-
 CREATE TABLE test.t1 (a int, b int, PRIMARY KEY (a));
 INSERT INTO test.t1 VALUES (1, 1), (2, 2);
 
@@ -43,14 +41,4 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 
 SELECT * FROM test.t1;
 
-# Cleanup
---connection master
-DROP TABLE test.t1;
-SET GLOBAL debug_dbug="";
-
---connection slave
-DROP TABLE test.t1;
-SET GLOBAL debug_dbug="";
-
---let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl_provisioning_end.inc

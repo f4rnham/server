@@ -5,8 +5,6 @@
 
 # Create databases and tables on master + fill them with data
 --connection master
-RESET MASTER;
-
 eval CREATE TABLE test.test_1 (a int, PRIMARY KEY (a)) ENGINE=$engine_type;
 eval CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a)) ENGINE=$engine_type;
 
@@ -85,24 +83,9 @@ SHOW CREATE TRIGGER test.trigger_1;
 
 # Cleanup
 --connection master
-DROP TABLE test.test_1;
-DROP TABLE test.test_2;
-DROP TABLE test.big_table;
 DROP DATABASE test2;
-DROP VIEW test.v_1;
-DROP PROCEDURE test.fill_big_table;
-DROP EVENT test.ev;
-SET GLOBAL debug_dbug="";
 
 --connection slave
-DROP TABLE test.test_1;
-DROP TABLE test.test_2;
-DROP TABLE test.big_table;
 DROP DATABASE test2;
-DROP VIEW test.v_1;
-DROP PROCEDURE test.fill_big_table;
-DROP EVENT test.ev;
-SET GLOBAL debug_dbug="";
 
---let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl_provisioning_end.inc

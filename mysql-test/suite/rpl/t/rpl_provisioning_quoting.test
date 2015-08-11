@@ -6,8 +6,6 @@
 
 # Create databases and tables on master + fill them with data
 --connection master
-RESET MASTER;
-
 CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_` (`_@_*_$_'_ _\t_\x_"_``_` int, PRIMARY KEY (`_@_*_$_'_ _\t_\x_"_``_`));
 INSERT INTO test.`_@_*_$_'_ _\t_\x_"_``_` VALUES (1), (2), (3), (4), (5);
 
@@ -43,18 +41,11 @@ SELECT * FROM `_@_*_$_'_ _\t_\x_"_``_`.`select`;
 
 # Cleanup
 --connection master
-DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `select`;
-DROP EVENT test.`_@_*_$_'_ _\t_\x_"_``_`;
-SET GLOBAL debug_dbug="";
 
 --connection slave
-DROP TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
 DROP DATABASE `select`;
-DROP EVENT test.`_@_*_$_'_ _\t_\x_"_``_`;
-SET GLOBAL debug_dbug="";
 
---let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl_provisioning_end.inc

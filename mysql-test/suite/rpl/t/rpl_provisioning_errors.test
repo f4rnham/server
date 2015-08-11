@@ -160,13 +160,4 @@ CHANGE MASTER TO MASTER_USE_GTID= slave_pos, MASTER_USER= 'root';
 
 # ...
 
-# Final cleanup
---connection master
-SET GLOBAL debug_dbug="";
-
---connection slave
-SET GLOBAL debug_dbug="";
-CREATE DATABASE test;
-
---let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl_provisioning_end.inc

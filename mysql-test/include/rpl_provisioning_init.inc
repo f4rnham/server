@@ -13,7 +13,7 @@
 #   [--let $rpl_debug= 1]
 #   [--let $slave_timeout= NUMBER]
 #   [--let $invert_binlog_format= 1]
-#   --source include/rpl_provisioning_inite.inc
+#   --source include/rpl_provisioning_init.inc
 #
 # Parameters:
 #   $rpl_check_server_ids, $rpl_skip_reset_master_and_slave,

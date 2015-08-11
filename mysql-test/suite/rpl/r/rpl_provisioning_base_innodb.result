@@ -3,7 +3,6 @@ SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
-RESET MASTER;
 CREATE TABLE test.test_1 (a int, PRIMARY KEY (a)) ENGINE='InnoDB';
 CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a)) ENGINE='InnoDB';
 INSERT INTO test.test_1 VALUES (1), (2), (3), (4), (5);
@@ -226,20 +225,13 @@ ON test_1 FOR EACH ROW
 BEGIN
 SET @test_var= 1;
 END	latin1	latin1_swedish_ci	latin1_swedish_ci
-DROP TABLE test.test_1;
-DROP TABLE test.test_2;
-DROP TABLE test.big_table;
 DROP DATABASE test2;
-DROP VIEW test.v_1;
-DROP PROCEDURE test.fill_big_table;
-DROP EVENT test.ev;
-SET GLOBAL debug_dbug="";
-DROP TABLE test.test_1;
-DROP TABLE test.test_2;
-DROP TABLE test.big_table;
 DROP DATABASE test2;
-DROP VIEW test.v_1;
-DROP PROCEDURE test.fill_big_table;
-DROP EVENT test.ev;
+include/rpl_provisioning_end.inc
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
 SET GLOBAL debug_dbug="";
-include/rpl_end.inc
+SET GLOBAL debug_dbug="";
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
+RESET SLAVE;
