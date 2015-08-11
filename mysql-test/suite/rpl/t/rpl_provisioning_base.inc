@@ -56,6 +56,19 @@ LOAD DATA FROM MASTER;
 # Provisioning is completed after sql thread was shut down
 --source include/rpl_provisioning_wait_to_stop.inc
 
+# Start replication and perform changes on master
+START SLAVE;
+
+--connection master
+UPDATE test2.test2_2 SET b = 5 WHERE a = 1;
+DELETE FROM test2.test2_1 WHERE a = 3;
+INSERT INTO test.test_1 VALUES (8);
+save_master_pos;
+
+--connection slave
+sync_with_master;
+STOP SLAVE;
+
 # Check if database, table / view structures and routines were transferred
 SHOW CREATE DATABASE test;
 SHOW CREATE DATABASE test2;
