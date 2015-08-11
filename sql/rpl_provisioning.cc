@@ -349,7 +349,7 @@ bool provisioning_send_info::build_database_list()
     Ed_column const *column= row->get_column(0);
 
     // This variable is here only because we can not use continue for outer
-    // loop in DBUG_EXECUTE_IF
+    // loop in DBUG_EXECUTE_IF_LOCKED
     bool skip= false;
 
     // Skip mysql, information_schema and performance_schema databases
@@ -362,7 +362,7 @@ bool provisioning_send_info::build_database_list()
 
     // Skip test run database only if we are running test - there is small
     // chance, that regular user database is called 'mtr'
-    DBUG_EXECUTE_IF("provisioning_test_running",
+    DBUG_EXECUTE_IF_LOCKED("provisioning_test_running",
     {
       if (!my_strcasecmp(system_charset_info, column->str, "mtr"))
         skip= true;
@@ -1130,7 +1130,7 @@ bool provisioning_send_info::send_done_event()
 
 int8 provisioning_send_info::send_provisioning_data()
 {
-  DBUG_EXECUTE_IF("provisioning_wait", return -1;);
+  DBUG_EXECUTE_IF_LOCKED("provisioning_wait", return -1;);
 
   switch (phase)
   {

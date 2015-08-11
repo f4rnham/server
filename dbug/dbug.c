@@ -1717,6 +1717,32 @@ BOOLEAN _db_keyword_(CODE_STATE *cs, const char *keyword, int strict)
 /*
  *  FUNCTION
  *
+ *      _db_keyword_locked_    locked version of _db_keyword_
+ *
+ *  DESCRIPTION
+ *
+ *      Acquires THR_LOCK_dbug before calling _db_keyword_ and returns its
+ *      result. Used in DBUG_EXECUTE[_IF]_LOCKED and DBUG_EVALUATE[_IF]_LOCKED
+ *      macros to make their usage in replication threads thread safe.
+ *
+ *      Returns TRUE if keyword accepted, FALSE otherwise.
+ *
+ */
+
+BOOLEAN _db_keyword_locked_(CODE_STATE *cs, const char *keyword, int strict)
+{
+  BOOLEAN result;
+  pthread_mutex_lock(&THR_LOCK_dbug);
+
+  result= _db_keyword_(cs, keyword, strict);
+
+  pthread_mutex_unlock(&THR_LOCK_dbug);
+  return result;
+}
+
+/*
+ *  FUNCTION
+ *
  *      Indent    indent a line to the given indentation level
  *
  *  SYNOPSIS
