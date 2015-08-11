@@ -17,7 +17,6 @@ LOAD DATA FROM MASTER;
 include/wait_for_slave_io_error.inc [errno=1979]
 Last_IO_Error = 'Provisioning failed with error code 1979 and message: 'Table does not contain primary key' while processing `test`.`t1`'
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP TABLE test.t1;
 DROP DATABASE IF EXISTS test;
 SET GLOBAL debug_dbug="+d,FORCE_SLAVE_TO_RECONNECT_DUMP";
@@ -27,7 +26,6 @@ include/wait_for_slave_io_error.inc [errno=1981]
 Last_IO_Error = 'Slave disconnected during provisioning, drop already provisioned databases from slave and try again'
 STOP SLAVE;
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 SET GLOBAL debug_dbug="-d,FORCE_SLAVE_TO_RECONNECT_DUMP";
 DROP DATABASE IF EXISTS test;
 SET GLOBAL debug_dbug="+d,provisioning_wait";
@@ -35,11 +33,10 @@ LOAD DATA FROM MASTER;
 START SLAVE;
 ERROR HY000: Provisioning is already running, run STOP SLAVE command to interrupt it
 SET GLOBAL debug_dbug="-d,provisioning_wait";
-include/wait_for_slave_sql_to_stop.inc
+include/rpl_provisioning_wait_to_stop.inc
 START SLAVE;
 STOP SLAVE;
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE IF EXISTS test;
 SET GLOBAL debug_dbug="+d,provisioning_wait";
 LOAD DATA FROM MASTER;
@@ -48,7 +45,6 @@ include/wait_for_slave_sql_error.inc [errno=1983]
 SET GLOBAL debug_dbug="-d,provisioning_wait";
 STOP SLAVE;
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE IF EXISTS test;
 DROP TABLE test.t2;
 CHANGE MASTER TO MASTER_USER= '';
@@ -58,7 +54,7 @@ include/wait_for_slave_io_error.inc [errno=1593]
 Last_IO_Error = 'Fatal error: Invalid (empty) username when attempting to connect to the master server. Connection attempt terminated.'
 STOP SLAVE;
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos, MASTER_USER= 'root';
+CHANGE MASTER TO MASTER_USER= 'root';
 include/rpl_provisioning_end.inc
 DROP DATABASE IF EXISTS test;
 CREATE DATABASE test;

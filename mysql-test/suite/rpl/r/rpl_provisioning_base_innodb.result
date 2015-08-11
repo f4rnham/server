@@ -1,7 +1,6 @@
 include/rpl_provisioning_init.inc
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 CREATE TABLE test.test_1 (a int, PRIMARY KEY (a)) ENGINE='InnoDB';
 CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a)) ENGINE='InnoDB';
@@ -33,7 +32,7 @@ CREATE EVENT test.ev
 ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
 DO UPDATE test.test_1 SET a= 0 WHERE 0;|
 LOAD DATA FROM MASTER;
-include/wait_for_slave_sql_to_stop.inc
+include/rpl_provisioning_wait_to_stop.inc
 SHOW CREATE DATABASE test;
 Database	Create Database
 test	CREATE DATABASE `test` /*!40100 DEFAULT CHARACTER SET latin1 */

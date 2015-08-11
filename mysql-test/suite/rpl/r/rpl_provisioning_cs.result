@@ -1,7 +1,6 @@
 include/rpl_provisioning_init.inc
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 
 ----- Creating objects
@@ -132,7 +131,7 @@ Database Collation	utf8_general_ci
 ----- Start provisioning
 
 LOAD DATA FROM MASTER;
-include/wait_for_slave_sql_to_stop.inc
+include/rpl_provisioning_wait_to_stop.inc
 
 ----- Show create statements from slave
 

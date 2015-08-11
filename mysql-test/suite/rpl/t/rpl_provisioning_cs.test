@@ -87,7 +87,7 @@ query_vertical SHOW CREATE EVENT test.ey;
 LOAD DATA FROM MASTER;
 
 # Provisioning is completed after sql thread was shut down
---source include/wait_for_slave_sql_to_stop.inc
+--source include/rpl_provisioning_wait_to_stop.inc
 
 --echo
 --echo ----- Show create statements from slave

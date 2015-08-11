@@ -39,7 +39,6 @@ LOAD DATA FROM MASTER;
 --let $slave_io_errno= 1979
 --source include/wait_for_slave_io_error.inc
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 
 # Cleanup after test case
 --connection master
@@ -63,7 +62,6 @@ LOAD DATA FROM MASTER;
 --source include/wait_for_slave_io_error.inc
 STOP SLAVE;
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 
 # Cleanup after test case
 --connection slave
@@ -92,14 +90,13 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 
 # Now START SLAVE will succeed
 --connection slave
---source include/wait_for_slave_sql_to_stop.inc
+--source include/rpl_provisioning_wait_to_stop.inc
 START SLAVE;
 
 # Cleanup after test case
 --connection slave
 STOP SLAVE;
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 # Creation of database `test` depends purely on timing and it has nothing to do with this test case
 --disable_warnings
 DROP DATABASE IF EXISTS test;
@@ -130,7 +127,6 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 --connection slave
 STOP SLAVE;
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 # Creation of database `test` depends purely on timing and it has nothing to do with this test case
 --disable_warnings
 DROP DATABASE IF EXISTS test;
@@ -152,7 +148,7 @@ call mtr.add_suppression("Slave I/O: Fatal error: Invalid .* username when attem
 # Cleanup after test case
 STOP SLAVE;
 RESET SLAVE;
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos, MASTER_USER= 'root';
+CHANGE MASTER TO MASTER_USER= 'root';
 
 #
 # Another test case

@@ -1,7 +1,6 @@
 include/rpl_provisioning_init.inc
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_` (`_@_*_$_'_ _\t_\x_"_``_` int, PRIMARY KEY (`_@_*_$_'_ _\t_\x_"_``_`));
 INSERT INTO test.`_@_*_$_'_ _\t_\x_"_``_` VALUES (1), (2), (3), (4), (5);
@@ -13,7 +12,7 @@ CREATE EVENT test.`_@_*_$_'_ _\t_\x_"_``_`
 ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
 DO SELECT 1;|
 LOAD DATA FROM MASTER;
-include/wait_for_slave_sql_to_stop.inc
+include/rpl_provisioning_wait_to_stop.inc
 SHOW CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 Table	Create Table
 _@_*_$_'_ _\t_\x_"_`_	CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_` (

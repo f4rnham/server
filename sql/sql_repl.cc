@@ -3280,26 +3280,26 @@ int stop_slave(THD* thd, Master_info* mi, bool net_report )
 
   @param net_report If true, saves the exit status into thd->stmt_da.
 
-  @retval 0 success
-  @retval 1 error
-  @retval -1 fatal error
+  @retval false success
+  @retval true  error
 */
 
-int start_provisioning(THD* thd , Master_info* mi)
+bool start_provisioning(THD* thd , Master_info* mi)
 {
   int slave_errno= 0;
   int thread_mask;
   char master_info_file_tmp[FN_REFLEN];
   char relay_log_info_file_tmp[FN_REFLEN];
+  const char *errmsg;
   DBUG_ENTER("start_provisioning");
 
   if (check_access(thd, SUPER_ACL, any_db, NULL, NULL, false, false))
-    DBUG_RETURN(-1);
+    DBUG_RETURN(true);
 
   if (slave_run_triggers_for_rbr)
   {
     my_error(ER_PROVISIONING_RUN_TRIGGERS_RBR, MYF(0));
-    DBUG_RETURN(1);
+    DBUG_RETURN(true);
   }
 
   create_logfile_name_with_suffix(master_info_file_tmp,
@@ -3325,7 +3325,7 @@ int start_provisioning(THD* thd , Master_info* mi)
     unlock_slave_threads(mi);
     my_error(ER_SLAVE_MUST_STOP, MYF(0), (int)mi->connection_name.length,
              mi->connection_name.str);
-    DBUG_RETURN(1);
+    DBUG_RETURN(true);
   }
 
   if (init_master_info(mi, master_info_file_tmp, relay_log_info_file_tmp, 0,
@@ -3337,6 +3337,15 @@ int start_provisioning(THD* thd , Master_info* mi)
   else
   {
     DBUG_ASSERT(!mi->slave_running && !mi->rli.slave_running);
+
+    if (purge_relay_logs(&mi->rli, thd, 0, &errmsg))
+    {
+      my_error(ER_RELAY_LOG_FAIL, MYF(0), errmsg);
+      unlock_slave_threads(mi);
+      DBUG_RETURN(true);
+    }
+
+    mi->clear_in_memory_info(false);
 
     DBUG_EXECUTE_IF("provisioning_test_running",
                     mi->dump_requested_semaphore= false;);
@@ -3365,10 +3374,11 @@ int start_provisioning(THD* thd , Master_info* mi)
     my_error(slave_errno, MYF(0),
              (int) mi->connection_name.length,
              mi->connection_name.str);
-    DBUG_RETURN(slave_errno == ER_BAD_SLAVE ? -1 : 1);
+
+    DBUG_RETURN(true);
   }
 
-  DBUG_RETURN(0);
+  DBUG_RETURN(false);
 }
 
 /**

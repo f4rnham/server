@@ -54,7 +54,7 @@ DELIMITER ;|
 LOAD DATA FROM MASTER;
 
 # Provisioning is completed after sql thread was shut down
---source include/wait_for_slave_sql_to_stop.inc
+--source include/rpl_provisioning_wait_to_stop.inc
 
 # Check if database, table / view structures and routines were transferred
 SHOW CREATE DATABASE test;

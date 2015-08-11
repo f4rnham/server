@@ -29,7 +29,7 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 
 # Wait for provisioning to finish
 --connection slave
---source include/wait_for_slave_sql_to_stop.inc
+--source include/rpl_provisioning_wait_to_stop.inc
 
 # If provisioning finished before all queries were executed, start
 # update slave from binlogs using regular replication
@@ -37,7 +37,6 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 save_master_pos;
 
 --connection slave
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 START SLAVE;
 sync_with_master;
 STOP SLAVE;

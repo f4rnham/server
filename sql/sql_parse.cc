@@ -3631,13 +3631,6 @@ end_with_restore_list:
       break;
     }
 
-    if (mi->using_gtid == Master_info::USE_GTID_NO)
-    {
-      my_error(ER_PROVISIONING_NOT_GTID, MYF(0));
-      mysql_mutex_unlock(&LOCK_active_mi);
-      break;
-    }
-
     if (!start_provisioning(thd, mi))
       my_ok(thd);
 

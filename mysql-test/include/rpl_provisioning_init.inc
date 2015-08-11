@@ -54,7 +54,6 @@ SET GLOBAL debug_dbug="+d,provisioning_test_running";
 
 # Prepare slave for provisioning
 --connection slave
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 
 --let $include_filename= rpl_provisioning_init.inc

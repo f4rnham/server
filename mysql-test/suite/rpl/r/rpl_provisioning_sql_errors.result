@@ -1,7 +1,6 @@
 include/rpl_provisioning_init.inc
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
 CREATE TABLE test.t1 (a int, b int, PRIMARY KEY (a));
 INSERT INTO test.t1 VALUES (1, 1), (2, 2);
@@ -17,7 +16,7 @@ DELETE FROM test.t1 WHERE a= 3;
 INSERT INTO test.t1 VALUES (4, 4);
 DROP DATABASE test;
 SET GLOBAL debug_dbug="-d,provisioning_wait";
-include/wait_for_slave_sql_to_stop.inc
+include/rpl_provisioning_wait_to_stop.inc
 SELECT * FROM test.t1;
 a	b
 1	3
