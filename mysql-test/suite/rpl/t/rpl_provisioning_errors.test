@@ -7,12 +7,12 @@
 # Attempt to start provisioning while not in GTID mode
 #
 --connection slave
-CHANGE MASTER TO MASTER_USE_GTID= no;
+SET GLOBAL slave_run_triggers_for_rbr=YES;
 --error 1980
 LOAD DATA FROM MASTER;
 
 # Cleanup after test case
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+SET GLOBAL slave_run_triggers_for_rbr=NO;
 
 #
 # Attempt to start provisioning while SQL thread is running

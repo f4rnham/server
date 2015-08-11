@@ -3638,7 +3638,7 @@ end_with_restore_list:
       break;
     }
 
-    if (!start_provisioning(thd, mi, 1 /* net report*/))
+    if (!start_provisioning(thd, mi))
       my_ok(thd);
 
     mysql_mutex_unlock(&LOCK_active_mi);

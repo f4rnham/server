@@ -1,12 +1,11 @@
 include/rpl_provisioning_init.inc
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
 DROP DATABASE test;
-CHANGE MASTER TO MASTER_USE_GTID= no;
+SET GLOBAL slave_run_triggers_for_rbr=YES;
 LOAD DATA FROM MASTER;
-ERROR HY000: This operation cannot be performed as server is not configured to use GTID; run CHANGE MASTER TO MASTER_USE_GTID = {current_pos|slave_pos} first
-CHANGE MASTER TO MASTER_USE_GTID= slave_pos;
+ERROR HY000: Option slave-run-triggers-for-rbr is turned on, if master contains any triggers provisioned database may not match masters, turn it off before proceeding
+SET GLOBAL slave_run_triggers_for_rbr=NO;
 START SLAVE SQL_THREAD;
 LOAD DATA FROM MASTER;
 ERROR HY000: This operation cannot be performed as you have a running slave ''; run STOP SLAVE '' first

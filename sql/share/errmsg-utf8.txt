@@ -7135,8 +7135,8 @@ ER_KILL_QUERY_DENIED_ERROR
         rus "Вы не являетесь владельцем запроса %lu"
 ER_PROVISIONING_FAILED
         eng "Provisioning failed with error code %d and message: %s"
-ER_PROVISIONING_NOT_GTID
-        eng "This operation cannot be performed as server is not configured to use GTID; run CHANGE MASTER TO MASTER_USE_GTID = {current_pos|slave_pos} first"
+ER_PROVISIONING_RUN_TRIGGERS_RBR
+        eng "Option slave-run-triggers-for-rbr is turned on, if master contains any triggers provisioned database may not match masters, turn it off before proceeding"
 ER_PROVISIONING_DISCONNECTED
         eng "Slave disconnected during provisioning, drop already provisioned databases from slave and try again"
 ER_PROVISIONING_RUNNING

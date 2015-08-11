@@ -3285,7 +3285,7 @@ int stop_slave(THD* thd, Master_info* mi, bool net_report )
   @retval -1 fatal error
 */
 
-int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
+int start_provisioning(THD* thd , Master_info* mi)
 {
   int slave_errno= 0;
   int thread_mask;
@@ -3293,8 +3293,14 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
   char relay_log_info_file_tmp[FN_REFLEN];
   DBUG_ENTER("start_provisioning");
 
-  if (check_access(thd, SUPER_ACL, any_db, NULL, NULL, 0, 0))
+  if (check_access(thd, SUPER_ACL, any_db, NULL, NULL, false, false))
     DBUG_RETURN(-1);
+
+  if (slave_run_triggers_for_rbr)
+  {
+    my_error(ER_PROVISIONING_RUN_TRIGGERS_RBR, MYF(0));
+    DBUG_RETURN(1);
+  }
 
   create_logfile_name_with_suffix(master_info_file_tmp,
                                   sizeof(master_info_file_tmp),
@@ -3356,10 +3362,9 @@ int start_provisioning(THD* thd , Master_info* mi,  bool net_report)
 
   if (slave_errno)
   {
-    if (net_report)
-      my_error(slave_errno, MYF(0),
-               (int) mi->connection_name.length,
-               mi->connection_name.str);
+    my_error(slave_errno, MYF(0),
+             (int) mi->connection_name.length,
+             mi->connection_name.str);
     DBUG_RETURN(slave_errno == ER_BAD_SLAVE ? -1 : 1);
   }
 
