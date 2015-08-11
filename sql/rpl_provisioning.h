@@ -1,5 +1,5 @@
-// FIXME - Farnham header
-// Debug only sql_print_information all around
+// FIXME - Farnham
+// Header
 
 #pragma once
 
@@ -117,9 +117,6 @@ struct provisioning_cs_info
 
   Entries from both mentioned lists are removed after their processing
   is done => fully processed entries are removed from those lists
-
-  FIXME - Farnham
-  Test need for quoting / escaping of database / table names
 */
 
 class provisioning_send_info

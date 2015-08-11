@@ -134,9 +134,6 @@ bool provisioning_send_info::open_table(TABLE_LIST* table_list,
                              table, strlen(table),
                              NULL, TL_READ);
 
-  // FIXME - Farnham
-  // Check for permissions
-
   if (open_and_lock_tables(thd, table_list, FALSE, 0))
   {
     error_text= "Failed to open table";
@@ -374,7 +371,8 @@ bool provisioning_send_info::build_database_list()
     if (skip)
       continue;
 
-    sql_print_information("Discovered database `%s`", column->str);
+    DBUG_PRINT("provisioning_test_running",
+               ("Discovered database `%s`", column->str));
     databases.push_back(thd->make_lex_string(column->str, column->length));
   }
 
@@ -440,11 +438,10 @@ bool provisioning_send_info::build_table_list()
     Ed_column const *name= row->get_column(0);
     Ed_column const *type= row->get_column(1);
 
-    sql_print_information("Discovered %s `%s`.`%s`",
-                          my_strcasecmp(system_charset_info, "VIEW", type->str) ?
-                          "table" : "view",
-                          database->str,
-                          name->str);
+    DBUG_PRINT("provisioning_test_running",
+               ("Discovered %s `%s`.`%s`",
+               my_strcasecmp(system_charset_info, "VIEW", type->str) ?
+               "table" : "view", database->str, name->str));
 
     if (my_strcasecmp(system_charset_info, "VIEW", type->str) == 0)
     {
@@ -587,8 +584,9 @@ bool provisioning_send_info::send_create_database()
   // First column is name of database, second is create query
   Ed_column const *column= rows.head()->get_column(1);
 
-  sql_print_information("Got create database query for `%s`\n%s",
-                        database->str, column->str);
+  DBUG_PRINT("provisioning_test_running",
+             ("Got create database query for `%s`\n%s",
+             database->str, column->str));
 
   return send_query_log_event(column);
 }
@@ -644,8 +642,9 @@ bool provisioning_send_info::send_create_table()
   // First column is name of table, second is create query
   Ed_column const *column= rows.head()->get_column(1);
 
-  sql_print_information("Got create table query for `%s`.`%s`\n%s",
-                        database->str, table, column->str);
+  DBUG_PRINT("provisioning_test_running",
+             ("Got create table query for `%s`.`%s`\n%s",
+             database->str, table, column->str));
 
 
   return send_query_log_event(column, false, database);
@@ -665,8 +664,9 @@ int8 provisioning_send_info::send_table_data()
   // Ensure that tables were prepared
   DBUG_ASSERT(!tables.is_empty());
 
-  sql_print_information("send_table_data() - `%s`.`%s`", databases.head()->str,
-                        tables.head());
+  DBUG_PRINT("provisioning_test_running",
+             ("send_table_data() - `%s`.`%s`",
+             databases.head()->str, tables.head()));
 
   TABLE_LIST table_list;
   if (open_table(&table_list, databases.head(), tables.head()))
@@ -817,8 +817,9 @@ bool provisioning_send_info::send_table_triggers()
 
   if (!triggers)
   {
-    sql_print_information("No triggers discovered in `%s`.`%s`",
-                          database->str, tables.head());
+    DBUG_PRINT("provisioning_test_running",
+               ("No triggers discovered in `%s`.`%s`",
+               database->str, tables.head()));
 
     close_tables();
     return 0;
@@ -843,7 +844,8 @@ bool provisioning_send_info::send_table_triggers()
 
     DBUG_ASSERT(db_cl_name && client_cs_name && connection_cl_name && sql_mode);
 
-    sql_print_information("Found trigger\n%s", definition->str);
+    DBUG_PRINT("provisioning_test_running",
+               ("Found trigger\n%s", definition->str));
 
     cs_info.cl_connection= get_collation_number(connection_cl_name->str);
     cs_info.cl_db= get_collation_number(db_cl_name->str);
@@ -905,8 +907,8 @@ bool provisioning_send_info::send_create_view()
   // First column is name of view, second is create query
   Ed_column const *column= rows.head()->get_column(1);
 
-  sql_print_information("Got create view query for %s\n%s",
-                        name->str, column->str);
+  DBUG_PRINT("provisioning_test_running", 
+             ("Got create view query for %s\n%s", name->str, column->str));
 
   dynstr_free(name);
   my_free(name);
@@ -981,7 +983,8 @@ bool provisioning_send_info::send_create_routines()
 
       LEX_STRING const *name= row->get_column(1);
 
-      sql_print_information("Discovered %s: %s", routine_type[i], name->str);
+      DBUG_PRINT("provisioning_test_running",
+                 ("Discovered %s: %s", routine_type[i], name->str));
       
       sp_head *sp;
       sp_name spname(*database, *name, true);
@@ -1061,7 +1064,8 @@ bool provisioning_send_info::send_create_events()
 
     LEX_STRING const *name= row->get_column(1);
 
-    sql_print_information("Discovered event: %s", name->str);
+    DBUG_PRINT("provisioning_test_running",
+               ("Discovered event: %s", name->str));
       
     Event_timed et;
     if (Events::get_db_repository()->load_named_event(thd, *database,
