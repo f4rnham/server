@@ -362,7 +362,7 @@ bool provisioning_send_info::build_database_list()
 
     // Skip test run database only if we are running test - there is small
     // chance, that regular user database is called 'mtr'
-    DBUG_EXECUTE_IF_LOCKED("provisioning_test_running",
+    DBUG_EXECUTE_IF("provisioning_test_running",
     {
       if (!my_strcasecmp(system_charset_info, column->str, "mtr"))
         skip= true;
