@@ -849,7 +849,7 @@ bool provisioning_send_info::send_table_triggers()
 
     cs_info.cl_connection= get_collation_number(connection_cl_name->str);
     cs_info.cl_db= get_collation_number(db_cl_name->str);
-    
+
     cs_info.cs_client= get_charset_number(client_cs_name->str, MY_CS_PRIMARY);
 
     cs_info.sql_mode= *sql_mode;
@@ -907,7 +907,7 @@ bool provisioning_send_info::send_create_view()
   // First column is name of view, second is create query
   Ed_column const *column= rows.head()->get_column(1);
 
-  DBUG_PRINT("provisioning_test_running", 
+  DBUG_PRINT("provisioning_test_running",
              ("Got create view query for %s\n%s", name->str, column->str));
 
   dynstr_free(name);
@@ -985,7 +985,7 @@ bool provisioning_send_info::send_create_routines()
 
       DBUG_PRINT("provisioning_test_running",
                  ("Discovered %s: %s", routine_type[i], name->str));
-      
+
       sp_head *sp;
       sp_name spname(*database, *name, true);
       spname.init_qname(thd);
@@ -1066,7 +1066,7 @@ bool provisioning_send_info::send_create_events()
 
     DBUG_PRINT("provisioning_test_running",
                ("Discovered event: %s", name->str));
-      
+
     Event_timed et;
     if (Events::get_db_repository()->load_named_event(thd, *database,
                                                       *name, &et))
