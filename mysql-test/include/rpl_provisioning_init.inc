@@ -31,6 +31,9 @@
 --let $include_filename= rpl_provisioning_init.inc
 --source include/begin_include_file.inc
 
+# Required due to debug_dbug variable usage
+--source include/have_debug.inc
+
 # Provisioning requires row binlog events
 if (!$invert_binlog_format)
 {
