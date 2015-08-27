@@ -49,7 +49,9 @@ if ($invert_binlog_format)
 --let $rpl_skip_start_slave= 1
 --source include/master-slave.inc
 
-# Enable debug code required for testing, for example ignore 'mtr' database
+# Enable debug code required for testing
+# - skip provisioning of 'mtr' database
+# - enable verbose provisioning related logs
 --connection slave
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 --connection master

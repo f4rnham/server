@@ -11,7 +11,7 @@ SET GLOBAL debug_dbug="+d,provisioning_wait";
 CREATE TABLE test.t1 (a int, PRIMARY KEY (a));
 
 --connection slave
-LOAD DATA FROM MASTER;
+--source include/load_data_from_master.inc
 
 --connection master
 UPDATE test.t1 SET a= 1;

@@ -3347,9 +3347,6 @@ bool start_provisioning(THD* thd , Master_info* mi)
 
     mi->clear_in_memory_info(false);
 
-    DBUG_EXECUTE_IF("provisioning_test_running",
-                    mi->dump_requested_semaphore= false;);
-
     slave_errno = start_slave_threads(thd,
                                       0 /*no mutex */,
                                       1 /* wait for start */,
@@ -3358,13 +3355,7 @@ bool start_provisioning(THD* thd , Master_info* mi)
                                       relay_log_info_file_tmp,
                                       thread_mask, true);
 
-    // Needs to be above DBUG_EXECUTE_IF(...)
     unlock_slave_threads(mi);
-
-    DBUG_EXECUTE_IF("provisioning_test_running",
-                    if (!slave_errno)
-                      while (!mi->dump_requested_semaphore)
-                        /* pass */;);
   }
 
   thd_proc_info(thd, 0);

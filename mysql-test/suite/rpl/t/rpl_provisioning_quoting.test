@@ -23,7 +23,7 @@ DELIMITER ;|
 
 # Start provisioning
 --connection slave
-LOAD DATA FROM MASTER;
+--source include/load_data_from_master.inc
 
 # Provisioning is completed after sql thread was shut down
 --source include/rpl_provisioning_wait_to_stop.inc

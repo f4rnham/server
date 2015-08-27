@@ -5,7 +5,7 @@ DROP DATABASE test;
 CREATE TABLE test.t1 (a int, b int, PRIMARY KEY (a));
 INSERT INTO test.t1 VALUES (1, 1), (2, 2);
 SET GLOBAL debug_dbug="+d,provisioning_wait";
-LOAD DATA FROM MASTER;
+include/load_data_from_master.inc
 UPDATE test.t1 SET b = 2 WHERE a = 1;
 DELETE FROM test.t1 WHERE a= 2;
 INSERT INTO test.t1 VALUES (3, 3);

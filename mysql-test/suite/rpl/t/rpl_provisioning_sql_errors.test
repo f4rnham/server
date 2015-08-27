@@ -12,7 +12,7 @@ INSERT INTO test.t1 VALUES (1, 1), (2, 2);
 # Start provisioning without sending any data - not even database / table structures
 SET GLOBAL debug_dbug="+d,provisioning_wait";
 --connection slave
-LOAD DATA FROM MASTER;
+--source include/load_data_from_master.inc
 
 # Now modify data in table on master while table does not exist on slave
 --connection master

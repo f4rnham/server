@@ -4,7 +4,7 @@ SET GLOBAL debug_dbug="+d,provisioning_test_running";
 DROP DATABASE test;
 SET GLOBAL debug_dbug="+d,provisioning_wait";
 CREATE TABLE test.t1 (a int, PRIMARY KEY (a));
-LOAD DATA FROM MASTER;
+include/load_data_from_master.inc
 UPDATE test.t1 SET a= 1;
 SET GLOBAL debug_dbug="-d,provisioning_wait";
 include/wait_for_slave_sql_error.inc [errno=1983]

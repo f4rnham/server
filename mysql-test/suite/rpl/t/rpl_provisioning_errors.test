@@ -43,7 +43,7 @@ INSERT INTO test.t1 VALUES (1), (2), (3), (4), (5);
 
 --connection slave
 call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1979 and message: 'Table does not contain primary key' while processing `test`.`t1`, Internal MariaDB error code: 1979");
-LOAD DATA FROM MASTER;
+--source include/load_data_from_master.inc
 
 --let $show_slave_io_error= 1
 --let $slave_io_errno= 1979
@@ -88,7 +88,7 @@ DROP DATABASE IF EXISTS test;
 SET GLOBAL debug_dbug="+d,provisioning_wait";
 
 --connection slave
-LOAD DATA FROM MASTER;
+--source include/load_data_from_master.inc
 
 # START SLAVE fails with error
 --error 1982
@@ -119,7 +119,7 @@ DROP DATABASE IF EXISTS test;
 SET GLOBAL debug_dbug="+d,provisioning_wait";
 
 --connection slave
-LOAD DATA FROM MASTER;
+--source include/load_data_from_master.inc
 
 --connection master
 CREATE TABLE test.t2 (a int);
@@ -143,22 +143,6 @@ DROP DATABASE IF EXISTS test;
 --enable_warnings
 --connection master
 DROP TABLE test.t2;
-
-#
-# Bug: Deadlock occurs when IO thread fails with error before dump request
-#
---connection slave
-# Use empty name because it is handled in special way - skipping reconnecting with delay
-CHANGE MASTER TO MASTER_USER= '';
-LOAD DATA FROM MASTER;
-call mtr.add_suppression("Slave I/O: Fatal error: Invalid .* username when attempting to connect to the master server. Connection attempt terminated. Internal MariaDB error code: 1593");
---let $slave_io_errno= 1593
---source include/wait_for_slave_io_error.inc
-
-# Cleanup after test case
---source include/stop_slave.inc
-RESET SLAVE;
-CHANGE MASTER TO MASTER_USER= 'root';
 
 #
 # Another test case

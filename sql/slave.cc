@@ -4072,11 +4072,6 @@ requesting master dump") ||
       goto connected;
     }
 
-    // "Unlock" waiting command handling thread after dump has been
-    // successfully requested from master
-    DBUG_EXECUTE_IF("provisioning_test_running",
-                    mi->dump_requested_semaphore= true;);
-
     DBUG_EXECUTE_IF("FORCE_SLAVE_TO_RECONNECT_DUMP", 
       if (!retry_count_dump)
       {
@@ -4277,11 +4272,6 @@ err:
   mysql_mutex_lock(&mi->run_lock);
 
 err_during_init:
-
-  // "Unlock" waiting command handling thread to prevent deadlock if eny error
-  // occurs before successful dump request
-  DBUG_EXECUTE_IF("provisioning_test_running",
-                  mi->dump_requested_semaphore= true;);
 
   /* Forget the relay log's format */
   delete mi->rli.relay_log.description_event_for_queue;

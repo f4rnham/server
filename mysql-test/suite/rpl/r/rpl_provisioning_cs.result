@@ -130,7 +130,7 @@ Database Collation	utf8_general_ci
 
 ----- Start provisioning
 
-LOAD DATA FROM MASTER;
+include/load_data_from_master.inc
 include/rpl_provisioning_wait_to_stop.inc
 
 ----- Show create statements from slave

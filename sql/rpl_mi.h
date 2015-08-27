@@ -229,19 +229,6 @@ class Master_info : public Slave_reporting_capability
   */
   bool dbug_do_disconnect;
   int dbug_event_counter;
-
-  /*
-    Semaphore used by LOAD DATA FROM MASTER command for test cases, its role is
-    to ensure, that slave's IO thread is connected to master before test case
-    can continue.
-
-    Normally command starts IO thread and ends immediately, in test cases
-    command handling thread waits for IO thread.
-
-    Note: Currently implemented as non-atomic spinlock, but for test cases it
-    is good enough
-  */
-  volatile bool dump_requested_semaphore;
 #endif
   bool inited;
   volatile bool abort_slave;

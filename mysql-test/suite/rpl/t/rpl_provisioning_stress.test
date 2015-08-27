@@ -14,7 +14,7 @@ CREATE TABLE tab (pk int AUTO_INCREMENT PRIMARY KEY, col1 int, col2 int, col3 in
 # Start provisioning
 SET GLOBAL debug_dbug="+d,provisioning_wait";
 --connection slave
-LOAD DATA FROM MASTER;
+--source include/load_data_from_master.inc
 
 # Generate rqg{1|2}.out files with queries
 --exec perl -I $RQG_HOME/lib $RQG_HOME/gensql.pl --grammar=$RQG_HOME/conf/example.yy --queries=1000 --dsn=dummy:print > $MYSQL_TMP_DIR/rqg1.out 2>/dev/null

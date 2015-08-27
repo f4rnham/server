@@ -33,7 +33,7 @@ INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 CREATE EVENT test.ev
 ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
 DO UPDATE test.test_1 SET a= 0 WHERE 0;|
-LOAD DATA FROM MASTER;
+include/load_data_from_master.inc
 include/rpl_provisioning_wait_to_stop.inc
 include/start_slave.inc
 UPDATE test2.test2_2 SET b = 5 WHERE a = 1;
