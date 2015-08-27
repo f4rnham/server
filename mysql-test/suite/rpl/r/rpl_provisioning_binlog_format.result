@@ -8,6 +8,7 @@ LOAD DATA FROM MASTER;
 UPDATE test.t1 SET a= 1;
 SET GLOBAL debug_dbug="-d,provisioning_wait";
 include/wait_for_slave_sql_error.inc [errno=1983]
+include/wait_for_slave_io_to_stop.inc
 include/rpl_provisioning_end.inc
 DROP DATABASE IF EXISTS test;
 CREATE DATABASE test;

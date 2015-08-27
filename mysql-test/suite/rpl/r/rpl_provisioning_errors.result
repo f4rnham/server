@@ -9,7 +9,11 @@ SET GLOBAL slave_run_triggers_for_rbr=NO;
 START SLAVE SQL_THREAD;
 LOAD DATA FROM MASTER;
 ERROR HY000: This operation cannot be performed as you have a running slave ''; run STOP SLAVE '' first
-STOP SLAVE SQL_THREAD;
+include/stop_slave_sql.inc
+START SLAVE IO_THREAD;
+LOAD DATA FROM MASTER;
+ERROR HY000: This operation cannot be performed as you have a running slave ''; run STOP SLAVE '' first
+include/stop_slave_io.inc
 CREATE TABLE test.t1 (a int);
 INSERT INTO test.t1 VALUES (1), (2), (3), (4), (5);
 call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1979 and message: 'Table does not contain primary key' while processing `test`.`t1`, Internal MariaDB error code: 1979");
@@ -24,7 +28,7 @@ call mtr.add_suppression("Slave I/O: Slave disconnected during provisioning, dro
 LOAD DATA FROM MASTER;
 include/wait_for_slave_io_error.inc [errno=1981]
 Last_IO_Error = 'Slave disconnected during provisioning, drop already provisioned databases from slave and try again'
-STOP SLAVE;
+include/stop_slave.inc
 RESET SLAVE;
 SET GLOBAL debug_dbug="-d,FORCE_SLAVE_TO_RECONNECT_DUMP";
 DROP DATABASE IF EXISTS test;
@@ -35,7 +39,7 @@ ERROR HY000: Provisioning is already running, run STOP SLAVE command to interrup
 SET GLOBAL debug_dbug="-d,provisioning_wait";
 include/rpl_provisioning_wait_to_stop.inc
 START SLAVE;
-STOP SLAVE;
+include/stop_slave.inc
 RESET SLAVE;
 DROP DATABASE IF EXISTS test;
 SET GLOBAL debug_dbug="+d,provisioning_wait";
@@ -43,7 +47,7 @@ LOAD DATA FROM MASTER;
 CREATE TABLE test.t2 (a int);
 include/wait_for_slave_sql_error.inc [errno=1983]
 SET GLOBAL debug_dbug="-d,provisioning_wait";
-STOP SLAVE;
+include/stop_slave.inc
 RESET SLAVE;
 DROP DATABASE IF EXISTS test;
 DROP TABLE test.t2;
@@ -52,7 +56,7 @@ LOAD DATA FROM MASTER;
 call mtr.add_suppression("Slave I/O: Fatal error: Invalid .* username when attempting to connect to the master server. Connection attempt terminated. Internal MariaDB error code: 1593");
 include/wait_for_slave_io_error.inc [errno=1593]
 Last_IO_Error = 'Fatal error: Invalid (empty) username when attempting to connect to the master server. Connection attempt terminated.'
-STOP SLAVE;
+include/stop_slave.inc
 RESET SLAVE;
 CHANGE MASTER TO MASTER_USER= 'root';
 include/rpl_provisioning_end.inc

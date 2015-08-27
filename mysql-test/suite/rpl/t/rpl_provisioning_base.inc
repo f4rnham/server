@@ -36,6 +36,11 @@ BEGIN
 END|
 DELIMITER ;|
 
+# Remove part of binary logs from master to make sure that provisioning
+# does not depend on them
+FLUSH LOGS;
+PURGE BINARY LOGS TO 'master-bin.000002';
+
 CREATE DATABASE test2;
 eval CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a)) ENGINE=$engine_type;
 eval CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a)) ENGINE=$engine_type;
@@ -57,7 +62,7 @@ LOAD DATA FROM MASTER;
 --source include/rpl_provisioning_wait_to_stop.inc
 
 # Start replication and perform changes on master
-START SLAVE;
+--source include/start_slave.inc
 
 --connection master
 UPDATE test2.test2_2 SET b = 5 WHERE a = 1;
@@ -67,7 +72,7 @@ save_master_pos;
 
 --connection slave
 sync_with_master;
-STOP SLAVE;
+--source include/stop_slave.inc
 
 # Check if database, table / view structures and routines were transferred
 SHOW CREATE DATABASE test;

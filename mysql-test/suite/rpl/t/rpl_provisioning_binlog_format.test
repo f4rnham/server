@@ -21,6 +21,7 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 --connection slave
 --let $slave_sql_errno= 1983
 --source include/wait_for_slave_sql_error.inc
+--source include/wait_for_slave_io_to_stop.inc
 
 # Cleanup
 --source include/rpl_provisioning_end.inc

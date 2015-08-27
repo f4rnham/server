@@ -4,7 +4,7 @@
 --source include/rpl_provisioning_init.inc
 
 #
-# Attempt to start provisioning while not in GTID mode
+# Attempt to start provisioning with slave_run_triggers_for_rbr enabled
 #
 --connection slave
 SET GLOBAL slave_run_triggers_for_rbr=YES;
@@ -22,7 +22,17 @@ START SLAVE SQL_THREAD;
 LOAD DATA FROM MASTER;
 
 # Cleanup after test case
-STOP SLAVE SQL_THREAD;
+--source include/stop_slave_sql.inc
+
+#
+# Attempt to start provisioning while IO thread is running
+#
+START SLAVE IO_THREAD;
+--error 1198
+LOAD DATA FROM MASTER;
+
+# Cleanup after test case
+--source include/stop_slave_io.inc
 
 #
 # Attempt to provision table without primary key
@@ -60,7 +70,7 @@ LOAD DATA FROM MASTER;
 --let $show_slave_io_error= 1
 --let $slave_io_errno= 1981
 --source include/wait_for_slave_io_error.inc
-STOP SLAVE;
+--source include/stop_slave.inc
 RESET SLAVE;
 
 # Cleanup after test case
@@ -95,7 +105,7 @@ START SLAVE;
 
 # Cleanup after test case
 --connection slave
-STOP SLAVE;
+--source include/stop_slave.inc
 RESET SLAVE;
 # Creation of database `test` depends purely on timing and it has nothing to do with this test case
 --disable_warnings
@@ -125,7 +135,7 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 
 # Cleanup after test case
 --connection slave
-STOP SLAVE;
+--source include/stop_slave.inc
 RESET SLAVE;
 # Creation of database `test` depends purely on timing and it has nothing to do with this test case
 --disable_warnings
@@ -146,7 +156,7 @@ call mtr.add_suppression("Slave I/O: Fatal error: Invalid .* username when attem
 --source include/wait_for_slave_io_error.inc
 
 # Cleanup after test case
-STOP SLAVE;
+--source include/stop_slave.inc
 RESET SLAVE;
 CHANGE MASTER TO MASTER_USER= 'root';
 

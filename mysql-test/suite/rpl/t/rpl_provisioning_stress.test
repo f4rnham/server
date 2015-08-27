@@ -37,9 +37,9 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 save_master_pos;
 
 --connection slave
-START SLAVE;
+--source include/start_slave.inc
 sync_with_master;
-STOP SLAVE;
+--source include/stop_slave.inc
 
 # Compare master and slave
 --let $diff_tables= master:test.tab , slave:test.tab

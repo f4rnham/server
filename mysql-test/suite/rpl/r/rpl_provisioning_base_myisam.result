@@ -23,6 +23,8 @@ ON test_1 FOR EACH ROW
 BEGIN
 SET @test_var= 1;
 END|
+FLUSH LOGS;
+PURGE BINARY LOGS TO 'master-bin.000002';
 CREATE DATABASE test2;
 CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a)) ENGINE='MyISAM';
 CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a)) ENGINE='MyISAM';
@@ -33,11 +35,11 @@ ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
 DO UPDATE test.test_1 SET a= 0 WHERE 0;|
 LOAD DATA FROM MASTER;
 include/rpl_provisioning_wait_to_stop.inc
-START SLAVE;
+include/start_slave.inc
 UPDATE test2.test2_2 SET b = 5 WHERE a = 1;
 DELETE FROM test2.test2_1 WHERE a = 3;
 INSERT INTO test.test_1 VALUES (8);
-STOP SLAVE;
+include/stop_slave.inc
 SHOW CREATE DATABASE test;
 Database	Create Database
 test	CREATE DATABASE `test` /*!40100 DEFAULT CHARACTER SET latin1 */
