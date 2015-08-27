@@ -41,15 +41,19 @@ void quote_name(char const *name, char *buff)
 
 provisioning_send_info::provisioning_send_info(THD *thd_arg)
   : thd(thd_arg)
-  , connection(new Ed_connection(thd))
+  , connection(NULL)
   , row_batch_end(NULL)
-  , row_buffer(my_malloc(ROW_BUFFER_DEFAULT_SIZE, MYF(0)))
-  , row_buffer_size(ROW_BUFFER_DEFAULT_SIZE)
   , phase(PROV_PHASE_INIT)
   , error(0)
   , error_text(NULL)
   , event_conversion_cache(NULL)
 {
+  // If allocation doesn't succeed here, we don't need to report error,
+  // buffer size is set to zero and there will be another attempt to allocate
+  // buffer to minimum required size right before it is first time used - if
+  // allocation also fails there, provisioning fails with error
+  row_buffer= my_malloc(ROW_BUFFER_DEFAULT_SIZE, MYF(0));
+  row_buffer_size= row_buffer ? ROW_BUFFER_DEFAULT_SIZE : 0;
 }
 
 provisioning_send_info::~provisioning_send_info()
@@ -1136,11 +1140,17 @@ int8 provisioning_send_info::send_provisioning_data()
   {
     case PROV_PHASE_INIT:
     {
+      connection= new Ed_connection(thd);
       event_conversion_cache= (IO_CACHE*)my_malloc(sizeof(IO_CACHE), MYF(0));
 
-      if (!event_conversion_cache ||
-          open_cached_file(event_conversion_cache, mysql_tmpdir,
-                           TEMP_PREFIX, READ_RECORD_BUFFER, MYF(MY_WME)))
+      if (!connection || !event_conversion_cache)
+      {
+        error_text= "Out of memory";
+        return 1;
+      }
+
+      if (open_cached_file(event_conversion_cache, mysql_tmpdir, TEMP_PREFIX,
+                           READ_RECORD_BUFFER, MYF(MY_WME)))
       {
         error_text= "Failed to prepare event conversion cache";
         my_free(event_conversion_cache);
