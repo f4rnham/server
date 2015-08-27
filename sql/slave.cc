@@ -5838,10 +5838,7 @@ static int queue_event(Master_info* mi,const char* buf, ulong event_len)
 
   case PROVISIONING_DONE_EVENT:
     mi->abort_slave= true;
-    /*
-      Fall through to default case ... and through debug code, nothing wrong
-      should happen
-    */
+    goto default_action;
 #ifndef DBUG_OFF
   case XID_EVENT:
     DBUG_EXECUTE_IF("slave_discard_xid_for_gtid_0_x_1000",

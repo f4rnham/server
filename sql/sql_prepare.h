@@ -191,7 +191,13 @@ public:
                    to see the error number.
   */
   bool execute_direct(LEX_STRING sql_text);
-  bool execute_direct(char *sql_text, size_t length= 0);
+  inline bool execute_direct(char *sql_text, size_t length)
+  {
+    LEX_STRING tmp_query;
+    tmp_query.str= sql_text;
+    tmp_query.length= length;
+    return execute_direct(tmp_query);
+  }
 
   /**
     Same as the previous, but takes an instance of Server_runnable

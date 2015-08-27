@@ -1,8 +1,6 @@
 // FIXME - Farnham
 // Header
 
-#pragma once
-
 #include "my_global.h"
 #include "sql_class.h"
 

@@ -247,13 +247,9 @@ bool provisioning_send_info::send_query_log_event(char const *query,
 
   if (cs_info)
   {
-    // thd->variables.character_set_client->number
     int2store(evt.charset, cs_info->cs_client);
-    // thd->variables.collation_connection->number
     int2store(evt.charset + 2, cs_info->cl_connection);
-    // cs_info->cl_server
     int2store(evt.charset + 4, thd->variables.collation_server->number);
-    // thd->variables.collation_database->number
     evt.charset_database_number= cs_info->cl_db;
 
     evt.sql_mode_inited= 1;
@@ -453,6 +449,9 @@ bool provisioning_send_info::build_table_list()
       DYNAMIC_STRING *str= (DYNAMIC_STRING*)my_malloc(sizeof(DYNAMIC_STRING),
                                                       MYF(0));
 
+      // Views are gathered through all databases and processed after all
+      // tables, because of this, we need to store view name along with
+      // database
       quote_name(database->str, name_buff);
       init_dynamic_string(str, name_buff,
                           // Both lengths + dot and quotes, will be reallocated
@@ -466,6 +465,9 @@ bool provisioning_send_info::build_table_list()
       views.push_back(str);
     }
     else if (my_strcasecmp(system_charset_info, "BASE TABLE", type->str) == 0)
+      // Table names does not need to be stored with database name because
+      // they are gathered once per each database and immediately processed
+      // Currently processed database is always in front of databases list
       tables.push_back(my_strdup(name->str, MYF(0)));
     else
       DBUG_ASSERT(false &&
