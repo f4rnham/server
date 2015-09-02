@@ -234,4 +234,5 @@ private:
   void free_key_range();
 
   void record_ed_connection_error(char const *msg);
+  void record_error(char const *format, ...);
 };

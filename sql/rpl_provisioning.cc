@@ -470,8 +470,11 @@ bool provisioning_send_info::build_table_list()
       // Currently processed database is always in front of databases list
       tables.push_back(my_strdup(name->str, MYF(0)));
     else
-      DBUG_ASSERT(false &&
-                  "Unexpected type of table returned by 'SHOW FULL TABLES'");
+    {
+      record_error("Unexpected type of table (%s) returned by "
+                   "'SHOW FULL TABLES'", type->str);
+      return true;
+    }
   }
 
   return false;
@@ -1312,6 +1315,23 @@ void provisioning_send_info::record_ed_connection_error(char const *msg)
   my_snprintf(error_text_buffer, sizeof(error_text_buffer),
               "%s, underlying error code %u, underlying error message: %s",
               msg, connection->get_last_errno(), connection->get_last_error());
+
+  error_text= error_text_buffer;
+}
+
+/**
+  Formats and stores error message composed from format string and arguments
+
+  @param format Format string
+  @param ...    Format string arguments
+ */
+
+void provisioning_send_info::record_error(char const *format, ...)
+{
+  va_list args;
+  va_start(args, format);
+  my_vsnprintf(error_text_buffer, sizeof(error_text_buffer), format, args);
+  va_end(args);
 
   error_text= error_text_buffer;
 }
