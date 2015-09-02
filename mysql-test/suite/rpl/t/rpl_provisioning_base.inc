@@ -42,11 +42,14 @@ FLUSH LOGS;
 PURGE BINARY LOGS TO 'master-bin.000002';
 
 CREATE DATABASE test2;
-eval CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a)) ENGINE=$engine_type;
-eval CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a)) ENGINE=$engine_type;
+
+SET foreign_key_checks= 0;
+eval CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a), FOREIGN KEY (a) REFERENCES test2.test2_2 (b)) ENGINE=$engine_type;
+eval CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a), FOREIGN KEY (b) REFERENCES test2.test2_1 (a)) ENGINE=$engine_type;
 
 INSERT INTO test2.test2_1 VALUES (1), (2), (3), (4), (5);
-INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
+INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4), (5, 5);
+SET foreign_key_checks= 1;
 
 DELIMITER |;
 CREATE EVENT test.ev
@@ -58,15 +61,14 @@ DELIMITER ;|
 --connection slave
 --source include/load_data_from_master.inc
 
-# Provisioning is completed after sql thread was shut down
 --source include/rpl_provisioning_wait_to_stop.inc
 
 # Start replication and perform changes on master
 --source include/start_slave.inc
 
 --connection master
-UPDATE test2.test2_2 SET b = 5 WHERE a = 1;
-DELETE FROM test2.test2_1 WHERE a = 3;
+UPDATE test.test_2 SET b = 5 WHERE a = 1;
+DELETE FROM test.test_1 WHERE a = 3;
 INSERT INTO test.test_1 VALUES (8);
 save_master_pos;
 

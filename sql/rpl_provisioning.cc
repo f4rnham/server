@@ -54,6 +54,13 @@ provisioning_send_info::provisioning_send_info(THD *thd_arg)
   // allocation also fails there, provisioning fails with error
   row_buffer= my_malloc(ROW_BUFFER_DEFAULT_SIZE, MYF(0));
   row_buffer_size= row_buffer ? ROW_BUFFER_DEFAULT_SIZE : 0;
+
+  // Disable foreign key checks for duration of provisioning - we do not
+  // need to enable it at the end because it is thread specific variable and
+  // thread ends with provisioning
+  // This flag causes every log event to be created with 
+  // NO_FOREIGN_KEY_CHECKS_F flag
+  thd->variables.option_bits|= OPTION_NO_FOREIGN_KEY_CHECKS;
 }
 
 provisioning_send_info::~provisioning_send_info()

@@ -26,18 +26,20 @@ END|
 FLUSH LOGS;
 PURGE BINARY LOGS TO 'master-bin.000002';
 CREATE DATABASE test2;
-CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a)) ENGINE='MyISAM';
-CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a)) ENGINE='MyISAM';
+SET foreign_key_checks= 0;
+CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a), FOREIGN KEY (a) REFERENCES test2.test2_2 (b)) ENGINE='MyISAM';
+CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a), FOREIGN KEY (b) REFERENCES test2.test2_1 (a)) ENGINE='MyISAM';
 INSERT INTO test2.test2_1 VALUES (1), (2), (3), (4), (5);
-INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
+INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4), (5, 5);
+SET foreign_key_checks= 1;
 CREATE EVENT test.ev
 ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
 DO UPDATE test.test_1 SET a= 0 WHERE 0;|
 include/load_data_from_master.inc
 include/rpl_provisioning_wait_to_stop.inc
 include/start_slave.inc
-UPDATE test2.test2_2 SET b = 5 WHERE a = 1;
-DELETE FROM test2.test2_1 WHERE a = 3;
+UPDATE test.test_2 SET b = 5 WHERE a = 1;
+DELETE FROM test.test_1 WHERE a = 3;
 INSERT INTO test.test_1 VALUES (8);
 include/stop_slave.inc
 SHOW CREATE DATABASE test;
@@ -77,7 +79,8 @@ Table	Create Table
 test2_2	CREATE TABLE `test2_2` (
   `a` int(11) NOT NULL DEFAULT '0',
   `b` int(11) DEFAULT NULL,
-  PRIMARY KEY (`a`)
+  PRIMARY KEY (`a`),
+  KEY `b` (`b`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 SHOW CREATE VIEW test.v_1;
 View	Create View	character_set_client	collation_connection
@@ -99,13 +102,12 @@ SELECT * FROM test.test_1 ORDER BY a;
 a
 1
 2
-3
 4
 5
 8
 SELECT * FROM test.test_2 ORDER BY a;
 a	b	c
-1	1	1
+1	5	1
 2	2	2
 3	3	3
 4	4	4
@@ -215,14 +217,16 @@ SELECT * FROM test2.test2_1 ORDER BY a;
 a
 1
 2
+3
 4
 5
 SELECT * FROM test2.test2_2 ORDER BY a;
 a	b
-1	5
+1	1
 2	2
 3	3
 4	4
+5	5
 SHOW CREATE TRIGGER test.trigger_1;
 Trigger	sql_mode	SQL Original Statement	character_set_client	collation_connection	Database Collation
 trigger_1		CREATE DEFINER=`root`@`localhost` TRIGGER test.trigger_1
