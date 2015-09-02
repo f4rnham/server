@@ -763,6 +763,7 @@ extern my_bool opt_mysql56_temporal_format, strict_password_validation;
 extern ulong binlog_checksum_options;
 extern bool max_user_connections_checking;
 extern ulong opt_binlog_dbug_fsync_sleep;
+extern ulong provisioning_row_batch_size;
 
 extern uint volatile global_disable_checkpoint;
 extern my_bool opt_help;

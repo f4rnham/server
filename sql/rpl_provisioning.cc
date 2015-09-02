@@ -754,7 +754,7 @@ int8 provisioning_send_info::send_table_data()
 
       ++packed_rows;
     }
-    while (packed_rows < PROV_ROW_BATCH_SIZE &&
+    while (packed_rows < provisioning_row_batch_size &&
            (error= hdl->read_range_next()) == 0);
 
     if (error && error != HA_ERR_END_OF_FILE)

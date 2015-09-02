@@ -2,6 +2,8 @@ include/rpl_provisioning_init.inc
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 DROP DATABASE test;
+SET @old_provisioning_row_batch_size= @@global.provisioning_row_batch_size;
+SET @@global.provisioning_row_batch_size= 5;
 CREATE TABLE test.test_1 (a int, PRIMARY KEY (a)) ENGINE='InnoDB';
 CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a)) ENGINE='InnoDB';
 INSERT INTO test.test_1 VALUES (1), (2), (3), (4), (5);
@@ -238,6 +240,7 @@ BEGIN
 SET @test_var= 1;
 END	latin1	latin1_swedish_ci	latin1_swedish_ci
 DROP DATABASE test2;
+SET @@global.provisioning_row_batch_size= @old_provisioning_row_batch_size;
 DROP DATABASE test2;
 include/rpl_provisioning_end.inc
 DROP DATABASE IF EXISTS test;

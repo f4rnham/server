@@ -3,6 +3,12 @@
 
 --source include/rpl_provisioning_init.inc
 
+# Set provisioning_row_batch_size to small value because we want to test if provisioning
+# can handle tables with large number of rows compared to provisioning_row_batch_size
+--connection master
+SET @old_provisioning_row_batch_size= @@global.provisioning_row_batch_size;
+SET @@global.provisioning_row_batch_size= 5;
+
 # Create databases and tables on master + fill them with data
 --connection master
 eval CREATE TABLE test.test_1 (a int, PRIMARY KEY (a)) ENGINE=$engine_type;
@@ -104,6 +110,7 @@ SHOW CREATE TRIGGER test.trigger_1;
 # Cleanup
 --connection master
 DROP DATABASE test2;
+SET @@global.provisioning_row_batch_size= @old_provisioning_row_batch_size;
 
 --connection slave
 DROP DATABASE test2;

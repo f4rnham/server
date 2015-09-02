@@ -5312,3 +5312,12 @@ static Sys_var_ulong Sys_log_tc_size(
        DEFAULT(my_getpagesize() * 6),
        BLOCK_SIZE(my_getpagesize()));
 #endif
+
+static Sys_var_ulong Sys_provisioning_row_batch_size(
+       "provisioning_row_batch_size",
+       "Number of rows retrieved from table during provisioning between each "
+       "pause, lower value results in tables being locked for shorter periods "
+       "of time but provisioning will take longer to complete",
+       GLOBAL_VAR(provisioning_row_batch_size), CMD_LINE(REQUIRED_ARG),
+       VALID_RANGE(1, ULONG_MAX), DEFAULT(1000), BLOCK_SIZE(1),
+       NO_MUTEX_GUARD, NOT_IN_BINLOG);

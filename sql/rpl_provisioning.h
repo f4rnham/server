@@ -73,13 +73,6 @@ enum provisioning_phase
 };
 
 /*
-  How much rows from table will be sent in one provisioning tick
-  FIXME - Farnham
-  Dynamic value
-*/
-#define PROV_ROW_BATCH_SIZE 5
-
-/*
   Default (minimum) size for row packing buffer - 1KB
 */
 #define ROW_BUFFER_DEFAULT_SIZE 0x400
