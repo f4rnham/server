@@ -35,5 +35,11 @@ RESET SLAVE;
 --let $rpl_only_running_threads= 1
 --source include/rpl_end.inc
 
+if ($use_checksums)
+{
+  --connection master
+  set @@global.binlog_checksum = @save_binlog_checksum;
+}
+
 --let $include_filename= rpl_provisioning_end.inc
 --source include/end_include_file.inc

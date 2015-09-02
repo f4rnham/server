@@ -13,6 +13,7 @@
 #   [--let $rpl_debug= 1]
 #   [--let $slave_timeout= NUMBER]
 #   [--let $invert_binlog_format= 1]
+#   [--let $use_checksums= 1]
 #   --source include/rpl_provisioning_init.inc
 #
 # Parameters:
@@ -27,6 +28,9 @@
 #   $invert_binlog_format
 #     Test will be executed only in non-row binlog formats (stmt, mix)
 #     opposed to usual - run test only in row binlog format
+#
+#   $use_checksums
+#     Enables binlog_checksum option master
 
 --let $include_filename= rpl_provisioning_init.inc
 --source include/begin_include_file.inc
@@ -60,6 +64,14 @@ SET GLOBAL debug_dbug="+d,provisioning_test_running";
 # Prepare slave for provisioning
 --connection slave
 DROP DATABASE test;
+
+# Enable checksums if requested
+if ($use_checksums)
+{
+  --connection master
+  set @save_binlog_checksum= @@global.binlog_checksum;
+  set @@global.binlog_checksum= CRC32;
+}
 
 --let $include_filename= rpl_provisioning_init.inc
 --source include/end_include_file.inc

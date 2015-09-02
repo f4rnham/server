@@ -509,10 +509,6 @@ bool provisioning_send_info::event_to_packet(Log_event &evt, String &packet)
     return true;
   }
 
-  // Set current server as source of event, when slave registers on master,
-  // it overwrites thd->variables.server_id with its own server id - and it is
-  // then used when writing event
-  int4store(&packet[SERVER_ID_OFFSET + 1], global_system_variables.server_id);
   return false;
 }
 
@@ -529,8 +525,19 @@ bool provisioning_send_info::send_event(Log_event &evt)
 {
   String packet;
 
+  // Set event as direct to make sure Log_event::need_checksum respects
+  // global checksum setting
+  // This value is not relevant otherwise since this event is not written into
+  // binlog
+  evt.set_direct_logging();
+
   // Slave will accept this event even if it modifies data structures
   evt.flags|= LOG_EVENT_PROVISIONING_F;
+
+  // Set current server as source of event, when slave registers on master,
+  // it overwrites thd->variables.server_id with its own server id - and it is
+  // then used when writing event
+  evt.server_id= global_system_variables.server_id;
 
   if (event_to_packet(evt, packet))
     return true;

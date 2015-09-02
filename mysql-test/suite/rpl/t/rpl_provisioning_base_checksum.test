@@ -1,0 +1,5 @@
+# MyISAM version of base provisioning test case with usage of binlog checksums
+
+let $engine_type= 'MyISAM';
+let $use_checksums= 1;
+--source suite/rpl/t/rpl_provisioning_base.inc
