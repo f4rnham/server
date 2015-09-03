@@ -701,18 +701,18 @@ int8 provisioning_send_info::send_table_data()
   handler *hdl= table->file;
   DBUG_ASSERT(hdl);
 
+  if (table->s->primary_key == MAX_KEY)
+  {
+    error_text= "Table does not contain primary key";
+    close_tables();
+    return 1;
+  }
+
   // Initialize scan from last remembered position - can be NULL but it is
   // valid function argument
   if ((error= hdl->prepare_range_scan(row_batch_end, NULL)) != 0)
   {
     error_text= "Range scan preparation failed";
-    close_tables();
-    return 1;
-  }
-
-  if (table->s->primary_key == MAX_KEY)
-  {
-    error_text= "Table does not contain primary key";
     close_tables();
     return 1;
   }

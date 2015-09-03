@@ -744,6 +744,11 @@ The following options may be given as the first argument:
  Seconds between sending progress reports to the client
  for time-consuming statements. Set to 0 to disable
  progress reporting.
+ --provisioning-row-batch-size=# 
+ Number of rows retrieved from table during provisioning
+ between each pause, lower value results in tables being
+ locked for shorter periods of time but provisioning will
+ take longer to complete
  --query-alloc-block-size=# 
  Allocation block size for query parsing and execution
  --query-cache-limit=# 
@@ -1342,6 +1347,7 @@ preload-buffer-size 32768
 profiling-history-size 15
 progress-report-time 5
 protocol-version 10
+provisioning-row-batch-size 1000
 query-alloc-block-size 16384
 query-cache-limit 1048576
 query-cache-min-res-unit 4096
