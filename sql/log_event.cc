@@ -9710,8 +9710,14 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
       There are a few flags that are replicated with each row event.
       Make sure to set/clear them before executing the main body of
       the event.
+
+      In provisioning mode ignore foreign key checks because tables are
+      created and filled with data over time one by one
+      This check forces NO_FOREIGN_KEY_CHECKS_F even for events coming from
+      binlog
     */
-    if (get_flags(NO_FOREIGN_KEY_CHECKS_F))
+    if (get_flags(NO_FOREIGN_KEY_CHECKS_F) ||
+        (thd->slave_thread && rli->mi->provisioning_mode))
         thd->variables.option_bits|= OPTION_NO_FOREIGN_KEY_CHECKS;
     else
         thd->variables.option_bits&= ~OPTION_NO_FOREIGN_KEY_CHECKS;

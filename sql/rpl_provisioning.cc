@@ -684,6 +684,8 @@ bool provisioning_send_info::send_create_table()
 
 int8 provisioning_send_info::send_table_data()
 {
+  DBUG_EXECUTE_IF_LOCKED("provisioning_skip_data", return 0;);
+
   // Ensure that tables were prepared
   DBUG_ASSERT(!tables.is_empty());
 
@@ -1258,7 +1260,20 @@ int8 provisioning_send_info::send_provisioning_data()
     case PROV_PHASE_VIEWS:
     {
       if (views.is_empty())
+      {
+        // After provisioning finishes give signal to tester and start waiting
+        DBUG_EXECUTE_IF_LOCKED("provisioning_wait_end",
+                               // We can not use DBUG_SET here becuase goal
+                               // is to be able to query new value of
+                               // debug_dbug from within test case
+                               connection->execute_direct("SET GLOBAL "
+                               "debug_dbug= '-d,provisioning_wait_end'", 50);
+                               connection->execute_direct("SET GLOBAL "
+                               "debug_dbug= '+d,provisioning_wait'", 46);
+                               return -1;);
+
         return send_done_event() ? 1 : 0;
+      }
 
       if (send_create_view())
         return 1;

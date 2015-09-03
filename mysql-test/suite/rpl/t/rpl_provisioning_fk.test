@@ -1,0 +1,64 @@
+# MDEV-7502 Automatic provisioning of slave
+# Tested functionality of LOAD DATA FROM MASTER - provisioning
+# ignores foreign key checks
+
+--source include/have_innodb.inc
+--source include/rpl_provisioning_init.inc
+
+# Create cyclic foreign key dependency (t1 <-> t2) to make sure,
+# that during provisioning at least one table will be created with
+# definition, which would violate foreign key checks
+--connection master
+SET foreign_key_checks= 0;
+CREATE TABLE test.t1 (a int, PRIMARY KEY (a), FOREIGN KEY (a) REFERENCES test.t2 (b)) ENGINE=InnoDB;
+CREATE TABLE test.t2 (a int, b int, PRIMARY KEY (a), FOREIGN KEY (b) REFERENCES test.t1 (a)) ENGINE=InnoDB;
+CREATE TABLE test.t3 (a int, PRIMARY KEY (a), FOREIGN KEY (a) REFERENCES test.t2 (b)) ENGINE=InnoDB;
+
+INSERT INTO test.t1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO test.t2 VALUES (1, 1), (2, 2), (3, 3), (4, 4), (5, 5);
+
+SET foreign_key_checks= 1;
+
+INSERT INTO test.t3 VALUES (1), (2);
+
+# Start provisioning, send only structures, no data and don't terminate connection when finished
+SET GLOBAL debug_dbug="+d,provisioning_skip_data";
+SET GLOBAL debug_dbug="+d,provisioning_wait_end";
+
+--connection slave
+--source include/load_data_from_master.inc
+
+# Wait until dbug provisioning_wait_end is hit, it modifies debug_dbug flags and waits
+--connection master
+--let $wait_condition= SELECT STRCMP(@@global.debug_dbug, 'd,provisioning_test_running,provisioning_skip_data,provisioning_wait') = 0;
+--source include/wait_condition.inc
+
+# Now check that slave has all tables from master but without data and execute query which
+# would fail foreign key checks on slave
+--connection slave
+
+--let $wait_condition= SELECT COUNT(*) = 3 FROM information_schema.tables WHERE table_name IN ('t1', 't2', 't3');
+--source include/wait_condition.inc
+
+SELECT COUNT(*) as zero FROM test.t1;
+SELECT COUNT(*) as zero FROM test.t2;
+SELECT COUNT(*) as zero FROM test.t3;
+
+--connection master
+INSERT INTO test.t3 VALUES (4);
+
+# Wait until query from master gets executed on slave
+--connection slave
+--let $wait_condition= SELECT COUNT(*) = 1 from test.t3;
+--source include/wait_condition.inc
+
+# Verify that insert got through even when it was failing foreign key checks
+SELECT * FROM test.t3;
+
+--connection master
+SET GLOBAL debug_dbug="-d,provisioning_wait";
+
+--connection slave
+--source include/rpl_provisioning_wait_to_stop.inc
+
+--source include/rpl_provisioning_end.inc
