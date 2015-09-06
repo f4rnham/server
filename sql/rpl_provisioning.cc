@@ -740,6 +740,9 @@ int8 provisioning_send_info::send_table_data()
 
     evt.set_flags(Rows_log_event::STMT_END_F);
 
+    size_t event_size= evt.get_data_size();
+    bool save_next_key= true;
+
     do
     {
       if (prepare_row_buffer(table, table->record[0]))
@@ -748,39 +751,61 @@ int8 provisioning_send_info::send_table_data()
       size_t len= pack_row(table, &table->s->all_set, (uchar*)row_buffer,
                            table->record[0]);
 
+      if (event_size + len >= thd->net.max_packet_size)
+      {
+        save_next_key= false;
+        break;
+      }
+
       if ((error= evt.add_row_data((uchar*)row_buffer, len)) != 0)
       {
         error_text= "Failed to add row data to event";
         goto error;
       }
 
+      event_size+= len;
+      DBUG_ASSERT(event_size == evt.get_data_size());
+
       ++packed_rows;
     }
     while (packed_rows < provisioning_row_batch_size &&
            (error= hdl->read_range_next()) == 0);
 
+    if (packed_rows == 0 && error != HA_ERR_END_OF_FILE)
+    {
+      record_error("Row record on master is bigger than max_packet_size (%lu) "
+                   "increase the value and try again",
+                   thd->net.max_packet_size);
+      goto error;
+    }
+
     if (error && error != HA_ERR_END_OF_FILE)
       goto error;
 
-    if (packed_rows > 0)
-    {
-      if (send_event(map_evt) || send_event(evt))
-        goto error;
-    }
+    if (send_event(map_evt) || send_event(evt))
+      goto error;
 
-    // Read one more row and store its key for next call
     // On this place, variable error can be only 0 or HA_ERR_END_OF_FILE
-    if (error != HA_ERR_END_OF_FILE && (error= hdl->read_range_next()) == 0)
+    if (error != HA_ERR_END_OF_FILE)
     {
-      // First time saving key for this table, allocate structure for it
-      if (!row_batch_end && allocate_key_range(table))
-      {
-        error_text= "Out of memory";
-        goto error;
-      }
+      // If we hit provisioning_row_batch_size limit, save key of next record,
+      // else we hit max_packet_size and couldn't add current row into packet,
+      // save its key
+      if (save_next_key)
+        error= hdl->read_range_next();
 
-      key_copy(const_cast<uchar*>(row_batch_end->key), table->record[0],
-               table->key_info, table->key_info->key_length);
+      if (error == 0)
+      {
+        // First time saving key for this table, allocate structure for it
+        if (!row_batch_end && allocate_key_range(table))
+        {
+          error_text= "Out of memory";
+          goto error;
+        }
+
+        key_copy(const_cast<uchar*>(row_batch_end->key), table->record[0],
+                 table->key_info, table->key_info->key_length);
+      }
     }
   }
 

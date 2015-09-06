@@ -1,0 +1,40 @@
+include/rpl_provisioning_init.inc
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+DROP DATABASE test;
+SET @old_max_allowed_packet= @@global.max_allowed_packet;
+SET @old_net_buffer_length= @@global.net_buffer_length;
+SET @@global.net_buffer_length= 1024;
+SET @@global.max_allowed_packet= 1024;
+CREATE TABLE test.t1 (a int, PRIMARY KEY (a), b VARCHAR(2048));
+INSERT INTO test.t1 VALUES
+(1, REPEAT('a', 1000)), (2, REPEAT('a', 1000)), (3, REPEAT('a', 1000)),
+(4, REPEAT('a', 1000)), (5, REPEAT('a', 1000)), (6, REPEAT('a', 1000));
+include/load_data_from_master.inc
+include/rpl_provisioning_wait_to_stop.inc
+SELECT LENGTH(b) from test.t1;
+LENGTH(b)
+1000
+1000
+1000
+1000
+1000
+1000
+DROP DATABASE test;
+TRUNCATE TABLE test.t1;
+INSERT INTO test.t1 VALUES (1, REPEAT('a', 1050));
+call mtr.add_suppression(".*Row record on master is bigger than max_packet_size .1024. increase the value and try again.*");
+include/load_data_from_master.inc
+include/rpl_provisioning_wait_to_stop.inc
+Last_IO_Errno = '1979'
+Last_IO_Error = 'Provisioning failed with error code 1979 and message: 'Row record on master is bigger than max_packet_size (1024) increase the value and try again' while processing `test`.`t1`'
+SET @@global.max_allowed_packet= @old_max_allowed_packet;
+SET @@global.net_buffer_length= @old_net_buffer_length;
+include/rpl_provisioning_end.inc
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
+SET GLOBAL debug_dbug="";
+SET GLOBAL debug_dbug="";
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
+RESET SLAVE;

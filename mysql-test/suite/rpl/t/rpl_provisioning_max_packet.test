@@ -1,0 +1,45 @@
+# MDEV-7502 Automatic provisioning of slave
+# Tested functionality of LOAD DATA FROM MASTER - provisioning can
+# place less rows into one row event that provisioning_row_batch_size
+# in order to respect max_allowed_packet
+
+--source include/rpl_provisioning_init.inc
+
+--connection master
+SET @old_max_allowed_packet= @@global.max_allowed_packet;
+SET @old_net_buffer_length= @@global.net_buffer_length;
+SET @@global.net_buffer_length= 1024;
+SET @@global.max_allowed_packet= 1024;
+
+CREATE TABLE test.t1 (a int, PRIMARY KEY (a), b VARCHAR(2048));
+
+# Insert rows which will have to be transferres separately
+INSERT INTO test.t1 VALUES
+(1, REPEAT('a', 1000)), (2, REPEAT('a', 1000)), (3, REPEAT('a', 1000)),
+(4, REPEAT('a', 1000)), (5, REPEAT('a', 1000)), (6, REPEAT('a', 1000));
+
+--connection slave
+--source include/load_data_from_master.inc
+--source include/rpl_provisioning_wait_to_stop.inc
+
+SELECT LENGTH(b) from test.t1;
+DROP DATABASE test;
+
+# Insert row which will fail max_allowed_packet check
+--connection master
+TRUNCATE TABLE test.t1;
+INSERT INTO test.t1 VALUES (1, REPEAT('a', 1050));
+
+--connection slave
+call mtr.add_suppression(".*Row record on master is bigger than max_packet_size .1024. increase the value and try again.*");
+--source include/load_data_from_master.inc
+--source include/rpl_provisioning_wait_to_stop.inc
+
+--let $status_items= Last_IO_Errno, Last_IO_Error
+--source include/show_slave_status.inc
+
+--connection master
+SET @@global.max_allowed_packet= @old_max_allowed_packet;
+SET @@global.net_buffer_length= @old_net_buffer_length;
+
+--source include/rpl_provisioning_end.inc
