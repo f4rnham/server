@@ -1,0 +1,58 @@
+# CREATE TABLE test.t1 (a int, PRIMARY KEY (a));
+# Data for rows 1, 2, 4
+# UPDATE t1 SET a = 3 WHERE a = 7;
+# Data for rows 5, 6
+# Expected data on slave 1, 2, 3, 4, 5, 6
+# Wrong result 1, 2, 4, 5, 6 -- 3 is missing!
+
+--skip WIP
+
+--source include/rpl_provisioning_init.inc
+
+--connection master
+SET @old_provisioning_row_batch_size= @@global.provisioning_row_batch_size;
+SET @@global.provisioning_row_batch_size= 3;
+
+# Wait after first data batch
+SET GLOBAL debug_dbug="+d,provisioning_wait_data_1";
+
+CREATE TABLE test.t1 (a int, PRIMARY KEY (a));
+INSERT INTO t1 VALUES (1), (2), (4), (5), (6), (7);
+
+--connection slave
+--source include/load_data_from_master.inc
+
+# Wait until dbug provisioning_wait_data_1 is hit, it modifies debug_dbug flags and waits
+--connection master
+
+--let $wait_condition= SELECT STRCMP(@@global.debug_dbug, 'd,provisioning_test_running,provisioning_wait_data_1,provisioning_waiting') = 0;
+--source include/wait_condition.inc
+
+UPDATE t1 SET a = 3 WHERE a = 7;
+
+# Wait until query above gets replicated to slave (at first wait for table to be created - to be sure)
+--connection slave
+
+--let $wait_condition= SELECT COUNT(*) = 1 FROM information_schema.tables WHERE table_name = 't1';
+--source include/wait_condition.inc
+
+# !!! Update this query to expected result after fix !!!
+--let $wait_condition= SELECT COUNT(*) = 3 FROM test.t1;
+--source include/wait_condition.inc
+
+# Let provisioning finish and validate data
+--connection master
+SET GLOBAL debug_dbug="-d,provisioning_waiting";
+SET GLOBAL debug_dbug="-d,provisioning_wait_data_1";
+
+--connection slave
+--source include/rpl_provisioning_wait_to_stop.inc
+
+--connection slave
+SELECT * FROM test.t1;
+
+# Cleanup
+--connection master
+SET @@global.provisioning_row_batch_size= @old_provisioning_row_batch_size;
+
+--source include/rpl_provisioning_end.inc

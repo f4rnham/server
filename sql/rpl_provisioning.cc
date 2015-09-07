@@ -686,6 +686,21 @@ int8 provisioning_send_info::send_table_data()
 {
   DBUG_EXECUTE_IF_LOCKED("provisioning_skip_data", return 0;);
 
+  // Wait after first data chunk was sent
+  DBUG_EXECUTE_IF_LOCKED("provisioning_wait_data_1",
+                         // If we don't have row_batch_end saved (is NULL),
+                         // it means that this is first row batch for this
+                         // table - proceed, else wait
+                         if (row_batch_end)
+                         {
+                           // We can not use DBUG_SET here becuase goal
+                           // is to be able to query new value of
+                           // debug_dbug from within test case
+                           connection->execute_direct("SET GLOBAL "
+                           "debug_dbug= '+d,provisioning_waiting'", 49);
+                           return -1;
+                         });
+
   // Ensure that tables were prepared
   DBUG_ASSERT(!tables.is_empty());
 
