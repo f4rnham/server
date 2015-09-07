@@ -2,7 +2,7 @@
 # Tested functionality of LOAD DATA FROM MASTER - provisioning of objects
 # with specific character sets, collations, sql modes and time zones
 
---source include/rpl_provisioning_init.inc
+--source include/rpl_provisioning_init_row.inc
 
 --echo
 --echo ----- Creating objects

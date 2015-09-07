@@ -1,7 +1,7 @@
 # ==== Purpose ====
 #
 # Configure two servers to be replication master and slave
-# for provisioning purposes.  
+# for provisioning purposes.
 #
 # ==== Usage ====
 #
@@ -12,7 +12,6 @@
 #   [--let $rpl_skip_start_slave= 1]
 #   [--let $rpl_debug= 1]
 #   [--let $slave_timeout= NUMBER]
-#   [--let $invert_binlog_format= 1]
 #   [--let $use_checksums= 1]
 #   --source include/rpl_provisioning_init.inc
 #
@@ -25,10 +24,6 @@
 #   $rpl_server_count
 #     See include/master-slave.inc
 #
-#   $invert_binlog_format
-#     Test will be executed only in non-row binlog formats (stmt, mix)
-#     opposed to usual - run test only in row binlog format
-#
 #   $use_checksums
 #     Enables binlog_checksum option master
 
@@ -37,17 +32,6 @@
 
 # Required due to debug_dbug variable usage
 --source include/have_debug.inc
-
-# Provisioning requires row binlog events
-if (!$invert_binlog_format)
-{
-    --source include/have_binlog_format_row.inc
-}
-
-if ($invert_binlog_format)
-{
-    --source include/have_binlog_format_mixed_or_statement.inc
-}
 
 # Start regular replication
 --let $rpl_skip_start_slave= 1

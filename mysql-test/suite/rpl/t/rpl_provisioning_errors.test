@@ -1,7 +1,7 @@
 # MDEV-7502 Automatic provisioning of slave
 # Tested functionality of LOAD DATA FROM MASTER - error detection
 
---source include/rpl_provisioning_init.inc
+--source include/rpl_provisioning_init_row.inc
 
 #
 # Attempt to start provisioning with slave_run_triggers_for_rbr enabled

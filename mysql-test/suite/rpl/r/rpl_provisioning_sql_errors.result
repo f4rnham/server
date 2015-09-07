@@ -1,4 +1,4 @@
-include/rpl_provisioning_init.inc
+include/rpl_provisioning_init_row.inc
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 SET GLOBAL debug_dbug="+d,provisioning_test_running";
 DROP DATABASE test;

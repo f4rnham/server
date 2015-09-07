@@ -2,7 +2,7 @@
 # Tested functionality of LOAD DATA FROM MASTER - manipulation with data not
 # yet present on slave
 
---source include/rpl_provisioning_init.inc
+--source include/rpl_provisioning_init_row.inc
 
 # Create databases and tables on master + fill them with data
 --connection master

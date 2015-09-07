@@ -1,7 +1,7 @@
 # Basic provisioning test, testing transfer of database / table structures,
 # views, triggers, procedures
 
---source include/rpl_provisioning_init.inc
+--source include/rpl_provisioning_init_row.inc
 
 # Set provisioning_row_batch_size to small value because we want to test if provisioning
 # can handle tables with large number of rows compared to provisioning_row_batch_size
@@ -64,7 +64,6 @@ DELIMITER ;|
 --connection slave
 --source include/load_data_from_master.inc
 
-# Provisioning is completed after sql thread was shut down
 --source include/rpl_provisioning_wait_to_stop.inc
 
 # Start replication and perform changes on master

@@ -3,7 +3,7 @@
 # place less rows into one row event that provisioning_row_batch_size
 # in order to respect max_allowed_packet
 
---source include/rpl_provisioning_init.inc
+--source include/rpl_provisioning_init_row.inc
 
 --connection master
 SET @old_max_allowed_packet= @@global.max_allowed_packet;

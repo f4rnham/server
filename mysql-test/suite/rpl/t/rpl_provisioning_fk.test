@@ -3,7 +3,7 @@
 # ignores foreign key checks
 
 --source include/have_innodb.inc
---source include/rpl_provisioning_init.inc
+--source include/rpl_provisioning_init_row.inc
 
 # Create cyclic foreign key dependency (t1 <-> t2) to make sure,
 # that during provisioning at least one table will be created with
@@ -49,7 +49,7 @@ INSERT INTO test.t3 VALUES (4);
 
 # Wait until query from master gets executed on slave
 --connection slave
---let $wait_condition= SELECT COUNT(*) = 1 from test.t3;
+--let $wait_condition= SELECT COUNT(*) = 1 FROM test.t3;
 --source include/wait_condition.inc
 
 # Verify that insert got through even when it was failing foreign key checks

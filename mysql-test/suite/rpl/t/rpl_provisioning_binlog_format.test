@@ -2,8 +2,7 @@
 # Tested functionality of LOAD DATA FROM MASTER - Fail after receiving
 # query event when masters binlog_format != ROW
 
---let $invert_binlog_format= 1
---source include/rpl_provisioning_init.inc
+--source include/rpl_provisioning_init_mix_or_stmt.inc
 
 # Wait with provisioning, only binlog events are important now
 --connection master

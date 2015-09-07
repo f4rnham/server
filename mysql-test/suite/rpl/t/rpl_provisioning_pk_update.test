@@ -7,7 +7,7 @@
 
 --skip WIP
 
---source include/rpl_provisioning_init.inc
+--source include/rpl_provisioning_init_row.inc
 
 --connection master
 SET @old_provisioning_row_batch_size= @@global.provisioning_row_batch_size;

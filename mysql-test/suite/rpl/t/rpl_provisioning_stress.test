@@ -6,7 +6,7 @@
 # !!! Manual setup of path to Random Query Generator is necesary !!!
 --let $RQG_HOME= !!!
 
---source include/rpl_provisioning_init.inc
+--source include/rpl_provisioning_init_row.inc
 
 --connection master
 CREATE TABLE tab (pk int AUTO_INCREMENT PRIMARY KEY, col1 int, col2 int, col3 int);
