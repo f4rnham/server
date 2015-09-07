@@ -42,7 +42,7 @@ CREATE TABLE test.t1 (a int);
 INSERT INTO test.t1 VALUES (1), (2), (3), (4), (5);
 
 --connection slave
-call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1979 and message: 'Table does not contain primary key' while processing `test`.`t1`, Internal MariaDB error code: 1979");
+call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1979 and message: .Table does not contain primary key. while processing `test`.`t1`, Internal MariaDB error code: 1979");
 --source include/load_data_from_master.inc
 
 --let $show_slave_io_error= 1
@@ -122,7 +122,7 @@ SET GLOBAL debug_dbug="+d,provisioning_wait";
 --source include/load_data_from_master.inc
 
 --connection master
-CREATE TABLE test.t2 (a int);
+CREATE TABLE test.t2 (a int, PRIMARY KEY (a));
 
 # Expecting slave error
 --connection slave
@@ -135,7 +135,7 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 
 # Cleanup after test case
 --connection slave
---source include/stop_slave.inc
+--source include/wait_for_slave_io_to_stop.inc
 RESET SLAVE;
 # Creation of database `test` depends purely on timing and it has nothing to do with this test case
 --disable_warnings
