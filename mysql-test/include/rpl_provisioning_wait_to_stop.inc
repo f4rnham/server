@@ -50,9 +50,9 @@ if ($binlog_pos_master != $binlog_pos_slave)
 
 # Ensure that master and slave gtids are equal
 --connection master
---let $gtid_master= `SELECT @@gtid_binlog_pos`
+--let $gtid_master= `SELECT @@gtid_current_pos`
 -- connection master
---let $gtid_slave= `SELECT @@gtid_binlog_pos`
+--let $gtid_slave= `SELECT @@gtid_current_pos`
 
 if ($gtid_master != $gtid_slave)
 {

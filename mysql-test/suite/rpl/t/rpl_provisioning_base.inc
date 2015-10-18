@@ -61,6 +61,10 @@ DO UPDATE test.test_1 SET a= 0 WHERE 0;|
 DELIMITER ;|
 
 # Start provisioning
+if ($use_gtid)
+{
+  CHANGE MASTER TO master_use_gtid= slave_pos;
+}
 --connection slave
 --source include/load_data_from_master.inc
 

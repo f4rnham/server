@@ -1703,42 +1703,17 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       /* TODO: The following has to be changed to an 8 byte integer */
       pos= (my_off_t)uint4korr(packet);
       flags= uint2korr(packet + 4);
-
-      // In provisioning mode, master starts sending data from current position
-      if (flags & BINLOG_DUMP_PROVISIONING_MODE)
-      {
-        if (mysql_bin_log.is_open())
-        {
-          LOG_INFO li;
-          mysql_bin_log.get_current_log(&li);
-          size_t dir_len= dirname_length(li.log_file_name);
-          log_ident= thd->strmake(li.log_file_name + dir_len,
-                                  strlen(li.log_file_name) - dir_len);
-          pos= li.pos;
-        }
-        else
-        {
-          my_message(ER_NO_BINARY_LOGGING, ER(ER_NO_BINARY_LOGGING), MYF(0));
-          error= TRUE;
-        }
-      }
-      else
-      {
-        log_ident= thd->strdup(packet + 10);
-      }
+      log_ident= thd->strdup(packet + 10);
 
       thd->variables.server_id= 0; /* avoid suicide */
       if ((slave_server_id= uint4korr(packet + 6))) // mysqlbinlog.server_id==0
         kill_zombie_dump_threads(slave_server_id);
       thd->variables.server_id= slave_server_id;
 
-      if (!error)
-      {
-        general_log_print(thd, command, "Log: '%s'  Pos: %ld", log_ident,
-                          (long)pos);
+      general_log_print(thd, command, "Log: '%s'  Pos: %ld", log_ident,
+                        (long)pos);
 
-        mysql_binlog_send(thd, log_ident, pos, flags);
-      }
+      mysql_binlog_send(thd, log_ident, pos, flags);
 
       unregister_slave(thd, 1, 1);
       /* Fake COM_QUIT -- if we get here, the thread needs to terminate */

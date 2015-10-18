@@ -3345,8 +3345,6 @@ bool start_provisioning(THD* thd , Master_info* mi)
       DBUG_RETURN(true);
     }
 
-    mi->clear_in_memory_info(false);
-
     slave_errno = start_slave_threads(thd,
                                       0 /*no mutex */,
                                       1 /* wait for start */,

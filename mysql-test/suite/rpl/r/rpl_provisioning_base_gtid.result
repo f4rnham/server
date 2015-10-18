@@ -1,0 +1,247 @@
+include/rpl_provisioning_init_row.inc
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+SET GLOBAL debug_dbug="+d,provisioning_test_running";
+DROP DATABASE test;
+SET @old_provisioning_row_batch_size= @@global.provisioning_row_batch_size;
+SET @@global.provisioning_row_batch_size= 5;
+CREATE TABLE test.test_1 (a int, PRIMARY KEY (a)) ENGINE='MyISAM';
+CREATE TABLE test.test_2 (a int, b int, c int, PRIMARY KEY (a)) ENGINE='MyISAM';
+INSERT INTO test.test_1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO test.test_2 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4);
+CREATE VIEW test.v_1 AS SELECT test.test_1.a FROM test.test_1;
+CREATE TABLE big_table (a int auto_increment, PRIMARY KEY (a)) ENGINE='MyISAM';
+CREATE PROCEDURE test.fill_big_table()
+BEGIN
+DECLARE v1 INT DEFAULT 100;
+WHILE v1 > 0 DO
+INSERT big_table VALUES (NULL);
+SET v1 = v1 - 1;
+END WHILE;
+END|
+CALL test.fill_big_table();
+CREATE TRIGGER test.trigger_1
+AFTER UPDATE
+ON test_1 FOR EACH ROW
+BEGIN
+SET @test_var= 1;
+END|
+FLUSH LOGS;
+PURGE BINARY LOGS TO 'master-bin.000002';
+CREATE DATABASE test2;
+CREATE TABLE test2.test2_1 (a int, PRIMARY KEY (a)) ENGINE='MyISAM';
+CREATE TABLE test2.test2_2 (a int, b int, PRIMARY KEY (a)) ENGINE='MyISAM';
+INSERT INTO test2.test2_1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO test2.test2_2 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
+CREATE EVENT test.ev
+ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07'
+DO UPDATE test.test_1 SET a= 0 WHERE 0;|
+CHANGE MASTER TO master_use_gtid= slave_pos;
+include/load_data_from_master.inc
+include/rpl_provisioning_wait_to_stop.inc
+include/start_slave.inc
+UPDATE test2.test2_2 SET b = 5 WHERE a = 1;
+DELETE FROM test2.test2_1 WHERE a = 3;
+INSERT INTO test.test_1 VALUES (8);
+include/stop_slave.inc
+SHOW CREATE DATABASE test;
+Database	Create Database
+test	CREATE DATABASE `test` /*!40100 DEFAULT CHARACTER SET latin1 */
+SHOW CREATE DATABASE test2;
+Database	Create Database
+test2	CREATE DATABASE `test2` /*!40100 DEFAULT CHARACTER SET latin1 */
+SHOW CREATE TABLE test.test_1;
+Table	Create Table
+test_1	CREATE TABLE `test_1` (
+  `a` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE TABLE test.test_2;
+Table	Create Table
+test_2	CREATE TABLE `test_2` (
+  `a` int(11) NOT NULL DEFAULT '0',
+  `b` int(11) DEFAULT NULL,
+  `c` int(11) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE TABLE test.big_table;
+Table	Create Table
+big_table	CREATE TABLE `big_table` (
+  `a` int(11) NOT NULL AUTO_INCREMENT,
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM AUTO_INCREMENT=101 DEFAULT CHARSET=latin1
+SHOW CREATE TABLE test2.test2_1;
+Table	Create Table
+test2_1	CREATE TABLE `test2_1` (
+  `a` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE TABLE test2.test2_2;
+Table	Create Table
+test2_2	CREATE TABLE `test2_2` (
+  `a` int(11) NOT NULL DEFAULT '0',
+  `b` int(11) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+SHOW CREATE VIEW test.v_1;
+View	Create View	character_set_client	collation_connection
+v_1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `test`.`v_1` AS select `test`.`test_1`.`a` AS `a` from `test`.`test_1`	latin1	latin1_swedish_ci
+SHOW CREATE PROCEDURE test.fill_big_table;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+fill_big_table		CREATE DEFINER=`root`@`localhost` PROCEDURE `fill_big_table`()
+BEGIN
+DECLARE v1 INT DEFAULT 100;
+WHILE v1 > 0 DO
+INSERT big_table VALUES (NULL);
+SET v1 = v1 - 1;
+END WHILE;
+END	latin1	latin1_swedish_ci	latin1_swedish_ci
+SHOW CREATE EVENT test.ev;
+Event	sql_mode	time_zone	Create Event	character_set_client	collation_connection	Database Collation
+ev		SYSTEM	CREATE DEFINER=`root`@`localhost` EVENT `ev` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO UPDATE test.test_1 SET a= 0 WHERE 0	latin1	latin1_swedish_ci	latin1_swedish_ci
+SELECT * FROM test.test_1 ORDER BY a;
+a
+1
+2
+3
+4
+5
+8
+SELECT * FROM test.test_2 ORDER BY a;
+a	b	c
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+SELECT * FROM test.big_table ORDER BY a;
+a
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+64
+65
+66
+67
+68
+69
+70
+71
+72
+73
+74
+75
+76
+77
+78
+79
+80
+81
+82
+83
+84
+85
+86
+87
+88
+89
+90
+91
+92
+93
+94
+95
+96
+97
+98
+99
+100
+SELECT * FROM test2.test2_1 ORDER BY a;
+a
+1
+2
+4
+5
+SELECT * FROM test2.test2_2 ORDER BY a;
+a	b
+1	5
+2	2
+3	3
+4	4
+SHOW CREATE TRIGGER test.trigger_1;
+Trigger	sql_mode	SQL Original Statement	character_set_client	collation_connection	Database Collation
+trigger_1		CREATE DEFINER=`root`@`localhost` TRIGGER test.trigger_1
+AFTER UPDATE
+ON test_1 FOR EACH ROW
+BEGIN
+SET @test_var= 1;
+END	latin1	latin1_swedish_ci	latin1_swedish_ci
+DROP DATABASE test2;
+SET @@global.provisioning_row_batch_size= @old_provisioning_row_batch_size;
+DROP DATABASE test2;
+include/rpl_provisioning_end.inc
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
+SET GLOBAL debug_dbug="";
+SET GLOBAL debug_dbug="";
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
+RESET SLAVE;

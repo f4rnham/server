@@ -1370,6 +1370,70 @@ bool is_network_error(uint errorno)
   return FALSE;   
 }
 
+/*
+  Tries to retrieve masters gtid state by using binlog_gtid_pos function and
+  binlog coordinates from Master_info.
+
+  RETURNS
+  0       ok
+  1       slave killed error
+  2       transient network problem, the caller should try to reconnect
+*/
+
+int load_master_gtid_state(MYSQL *mysql, Master_info *mi)
+{
+  MYSQL_RES *master_res= 0;
+  MYSQL_ROW master_row;
+  int result= 0;
+
+  char quote_buf[2*sizeof(mi->master_log_name)+1];
+  char str_buf[28+2*sizeof(mi->master_log_name)+10];
+  String query(str_buf, sizeof(str_buf), system_charset_info);
+  query.length(0);
+
+  query.append("SELECT binlog_gtid_pos('");
+  escape_quotes_for_mysql(&my_charset_bin, quote_buf, sizeof(quote_buf),
+                          mi->master_log_name, strlen(mi->master_log_name));
+  query.append(quote_buf);
+  query.append("',");
+  query.append_ulonglong(mi->master_log_pos);
+  query.append(")");
+
+  if (!mysql_real_query(mysql, query.c_ptr_safe(), query.length()) &&
+      (master_res= mysql_store_result(mysql)) &&
+      (master_row= mysql_fetch_row(master_res)) &&
+      (master_row[0] != NULL))
+  {
+    rpl_global_gtid_slave_state.load(mi->io_thd, master_row[0],
+                                     strlen(master_row[0]), false, false);
+  }
+  else if (check_io_slave_killed(mi, NULL))
+    result= 1;
+  else if (is_network_error(mysql_errno(mysql)))
+  {
+    mi->report(WARNING_LEVEL, mysql_errno(mysql), NULL,
+               "Get master GTID position failed with error: %s", mysql_error(mysql));
+    result= 2;
+  }
+  else
+  {
+    /*
+      ToDo: If the master does not have the binlog_gtid_pos() function, it
+      just means that it is an old master with no GTID support, so we should
+      do nothing.
+
+      However, if binlog_gtid_pos() exists, but fails or returns NULL, then
+      it means that the requested position is not valid. We could use this
+      to catch attempts to replicate from within the middle of an event,
+      avoiding strange failures or possible corruption.
+    */
+  }
+
+  if (master_res)
+    mysql_free_result(master_res);
+
+  return result;
+}
 
 /*
   Note that we rely on the master's version (3.23, 4.0.14 etc) instead of
@@ -1992,6 +2056,68 @@ past_checksum:
 after_set_capability:
 #endif
 
+  /*
+    Request latest binlog position from master before requesting dump,
+    provisioning mode doesn't need any old events
+  */
+  if (mi->provisioning_mode)
+  {
+    if (!mysql_real_query(mysql, STRING_WITH_LEN("SHOW MASTER STATUS")) &&
+        (master_res= mysql_store_result(mysql)) &&
+        (master_row= mysql_fetch_row(master_res)))
+    {
+      strmake_buf(mi->master_log_name, master_row[0]);
+      mi->master_log_pos= strtoul(master_row[1], 0, 10);
+
+      mysql_free_result(master_res);
+      master_res= NULL;
+
+      /*
+        If we are using gtid, load also corresponding gtid for retrieved binlog
+        coordinates - if not, gtid coordinates will be loaded in else block
+        bellow
+      */
+      if (mi->using_gtid != Master_info::USE_GTID_NO)
+      {
+        int result= load_master_gtid_state(mysql, mi);
+        if (result == 1)
+          goto network_err;
+        else if (result == 2)
+          goto slave_killed_err;
+
+        /*
+          mi->gtid_current_pos represents state from which onwards IO thread
+          requests events - update is also with current masters state
+        */
+        if (rpl_load_gtid_state(&mi->gtid_current_pos, mi->using_gtid ==
+                                Master_info::USE_GTID_CURRENT_POS))
+        {
+          err_code= ER_OUTOFMEMORY;
+          errmsg= "The slave I/O thread stops because a fatal out-of-memory "
+            "error is encountered when it tries to store masters gtid state";
+          sprintf(err_buff, "%s Error: Out of memory", errmsg);
+          goto err;
+        }
+      }
+    }
+    else if (check_io_slave_killed(mi, NULL))
+      goto slave_killed_err;
+    else if (is_network_error(mysql_errno(mysql)))
+    {
+      mi->report(WARNING_LEVEL, mysql_errno(mysql), NULL,
+                 "SHOW MASTER STATUS failed with error: %s", mysql_error(mysql));
+      goto network_err;
+    }
+    else
+    {
+      err_code= mysql_errno(mysql);
+      errmsg= "The slave I/O thread stops because master failed to execute "
+              "SHOW MASTER STATUS query";
+      sprintf(err_buff, "%s Error: %s", errmsg, mysql_error(mysql));
+      goto err;
+    }
+  }
+
   if (mi->using_gtid != Master_info::USE_GTID_NO)
   {
     /* Request dump to start from slave replication GTID state. */
@@ -2174,53 +2300,11 @@ after_set_capability:
       the corresponding GTID position from the master, so that the user
       can reconnect the next time using MASTER_GTID_POS=AUTO.
     */
-    char quote_buf[2*sizeof(mi->master_log_name)+1];
-    char str_buf[28+2*sizeof(mi->master_log_name)+10];
-    String query(str_buf, sizeof(str_buf), system_charset_info);
-    query.length(0);
-
-    query.append("SELECT binlog_gtid_pos('");
-    escape_quotes_for_mysql(&my_charset_bin, quote_buf, sizeof(quote_buf),
-                            mi->master_log_name, strlen(mi->master_log_name));
-    query.append(quote_buf);
-    query.append("',");
-    query.append_ulonglong(mi->master_log_pos);
-    query.append(")");
-
-    if (!mysql_real_query(mysql, query.c_ptr_safe(), query.length()) &&
-        (master_res= mysql_store_result(mysql)) &&
-        (master_row= mysql_fetch_row(master_res)) &&
-        (master_row[0] != NULL))
-    {
-      rpl_global_gtid_slave_state.load(mi->io_thd, master_row[0],
-                                       strlen(master_row[0]), false, false);
-    }
-    else if (check_io_slave_killed(mi, NULL))
-      goto slave_killed_err;
-    else if (is_network_error(mysql_errno(mysql)))
-    {
-      mi->report(WARNING_LEVEL, mysql_errno(mysql), NULL,
-                 "Get master GTID position failed with error: %s", mysql_error(mysql));
+    int result= load_master_gtid_state(mysql, mi);
+    if (result == 1)
       goto network_err;
-    }
-    else
-    {
-      /*
-        ToDo: If the master does not have the binlog_gtid_pos() function, it
-        just means that it is an old master with no GTID support, so we should
-        do nothing.
-
-        However, if binlog_gtid_pos() exists, but fails or returns NULL, then
-        it means that the requested position is not valid. We could use this
-        to catch attempts to replicate from within the middle of an event,
-        avoiding strange failures or possible corruption.
-      */
-    }
-    if (master_res)
-    {
-      mysql_free_result(master_res);
-      master_res= NULL;
-    }
+    else if (result == 2)
+      goto slave_killed_err;
   }
 
 err:
@@ -3898,7 +3982,7 @@ pthread_handler_t handle_slave_io(void *arg)
   my_pthread_setspecific_ptr(RPL_MASTER_INFO, mi);
 
   /* Load the set of seen GTIDs, if we did not already. */
-  if (!mi->provisioning_mode && rpl_load_gtid_slave_state(thd))
+  if (rpl_load_gtid_slave_state(thd))
   {
     mi->report(ERROR_LEVEL, thd->get_stmt_da()->sql_errno(), NULL,
                 "Unable to load replication GTID slave state from mysql.%s: %s",
