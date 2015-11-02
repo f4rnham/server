@@ -111,7 +111,7 @@ public:
   flag_set get_flags(flag_set flags_arg) const { return m_flags & flags_arg; }
 
 #if !defined(MYSQL_CLIENT) && defined(HAVE_REPLICATION)
-  virtual void pack_info(THD *thd, Protocol *protocol);
+  virtual void pack_info(Protocol *protocol);
 #endif
 
 #ifdef MYSQL_CLIENT
@@ -134,8 +134,8 @@ public:
   ulong get_table_id() const        { return m_table_id; }
 
 #ifndef MYSQL_CLIENT
-  virtual bool write_data_header(IO_CACHE *file);
-  virtual bool write_data_body(IO_CACHE *file);
+  virtual bool write_data_header();
+  virtual bool write_data_body();
   virtual const char *get_db() { return m_table->s->db.str; }
 #endif
   /*
