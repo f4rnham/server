@@ -19,6 +19,7 @@
 #
 # [--let $slave_timeout= NUMBER]
 # [--let $rpl_debug= 1]
+# [--let $master_connection= master]
 # --source include/load_data_from_master.inc
 #
 # Parameters:
@@ -27,6 +28,9 @@
 #
 #   $rpl_debug
 #     See include/rpl_init.inc
+#
+#   $master_connection
+#     Use this connection name for master instead of default 'master'
 
 
 --let $include_filename= load_data_from_master.inc
@@ -38,10 +42,15 @@ if (!$rpl_debug)
   --disable_query_log
 }
 
+if (!$master_connection)
+{
+  --let $master_connection= master
+}
+
 # Save old debug flags, provisioning_wait may be already present there
---connection master
+--connection $master_connection
 SET @old_dbug= @@GLOBAL.debug_dbug;
-SET GLOBAL debug_dbug="+d,provisioning_wait";
+SET GLOBAL debug_dbug= "+d,provisioning_wait";
 
 --connection slave
 LOAD DATA FROM MASTER;
@@ -50,7 +59,7 @@ LOAD DATA FROM MASTER;
 --source include/wait_for_slave_param.inc
 
 # Restore debug flags
---connection master
+--connection $master_connection
 SET GLOBAL debug_dbug= @old_dbug;
 
 --let $include_filename= load_data_from_master.inc

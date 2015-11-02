@@ -7840,6 +7840,7 @@ slave:
             LEX *lex= Lex;
             lex->sql_command= SQLCOM_SLAVE_PROVISIONING;
             lex->type= 0;
+            lex->mi.connection_name= null_lex_str;
           }
         ;
 

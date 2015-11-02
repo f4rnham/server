@@ -15,6 +15,7 @@
 #
 # [--let $slave_timeout= NUMBER]
 # [--let $rpl_debug= 1]
+# [--let $master_connection= master]
 # --source include/rpl_provisioning_wait_to_stop.inc
 #
 # Parameters:
@@ -23,15 +24,23 @@
 #
 #   $rpl_debug
 #     See include/rpl_init.inc
+#
+#   $master_connection
+#     Use this connection name for master instead of default 'master'
 
 
 --let $include_filename= rpl_provisioning_wait_to_stop.inc
 --source include/begin_include_file.inc
 
+if (!$master_connection)
+{
+  --let $master_connection= master
+}
+
 --source include/wait_for_slave_sql_to_stop.inc
 
 # Ensure that master and slave log names and positions are equal
---connection master
+--connection $master_connection
 --let $binlog_file_master= query_get_value(SHOW MASTER STATUS, File, 1)
 --let $binlog_pos_master= query_get_value(SHOW MASTER STATUS, Position, 1)
 --connection slave
@@ -49,9 +58,9 @@ if ($binlog_pos_master != $binlog_pos_slave)
 }
 
 # Ensure that master and slave gtids are equal
---connection master
+--connection $master_connection
 --let $gtid_master= `SELECT @@gtid_current_pos`
--- connection master
+-- connection $master_connection
 --let $gtid_slave= `SELECT @@gtid_current_pos`
 
 if ($gtid_master != $gtid_slave)

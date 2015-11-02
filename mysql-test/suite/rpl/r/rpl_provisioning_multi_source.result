@@ -1,0 +1,35 @@
+CHANGE MASTER 'master1' TO master_port=MYPORT_1, master_host= '127.0.0.1', master_user= 'root', master_use_gtid= slave_pos;
+CHANGE MASTER 'master2' TO master_port=MYPORT_2, master_host= '127.0.0.1', master_user= 'root', master_use_gtid= slave_pos;
+DROP DATABASE test;
+SET GLOBAL debug_dbug= "+d,provisioning_test_running";
+CREATE TABLE test.t1 (a int, PRIMARY KEY (a));
+INSERT INTO test.t1 VALUES (1), (2), (3);
+SET GLOBAL debug_dbug= "+d,provisioning_test_running";
+DROP DATABASE test;
+CREATE DATABASE test2;
+CREATE TABLE test2.t2 (a int, PRIMARY KEY (a));
+INSERT INTO test2.t2 VALUES (1), (2), (3);
+set default_master_connection= 'master1';
+include/load_data_from_master.inc
+include/rpl_provisioning_wait_to_stop.inc
+set default_master_connection= 'master2';
+include/load_data_from_master.inc
+include/rpl_provisioning_wait_to_stop.inc
+SELECT * FROM test.t1;
+a
+1
+2
+3
+SELECT * FROM test2.t2;
+a
+1
+2
+3
+DROP TABLE test.t1;
+DROP DATABASE test2;
+SET GLOBAL debug_dbug= "";
+SET GLOBAL debug_dbug= "";
+DROP TABLE test.t1;
+SET GLOBAL debug_dbug= "";
+DROP DATABASE test2;
+CREATE DATABASE test;
