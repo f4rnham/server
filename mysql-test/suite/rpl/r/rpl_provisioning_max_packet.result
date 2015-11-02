@@ -26,8 +26,8 @@ INSERT INTO test.t1 VALUES (1, REPEAT('a', 1050));
 call mtr.add_suppression(".*Row record on master is bigger than max_packet_size .1024. increase the value and try again.*");
 include/load_data_from_master.inc
 include/rpl_provisioning_wait_to_stop.inc
-Last_IO_Errno = '1979'
-Last_IO_Error = 'Provisioning failed with error code 1979 and message: 'Row record on master is bigger than max_packet_size (1024) increase the value and try again' while processing `test`.`t1`'
+Last_IO_Errno = '1980'
+Last_IO_Error = 'Provisioning failed with error code 1980 and message: 'Row record on master is bigger than max_packet_size (1024) increase the value and try again' while processing `test`.`t1`'
 SET @@global.max_allowed_packet= @old_max_allowed_packet;
 SET @@global.net_buffer_length= @old_net_buffer_length;
 include/rpl_provisioning_end.inc

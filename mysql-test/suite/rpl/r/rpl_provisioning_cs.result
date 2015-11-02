@@ -51,7 +51,7 @@ DO SELECT 1;|
 
 SHOW CREATE PROCEDURE test.px;
 Procedure	px
-sql_mode	
+sql_mode	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
 Create Procedure	CREATE DEFINER=`root`@`localhost` PROCEDURE `px`()
 BEGIN
 SELECT CHARSET('a');
@@ -71,7 +71,7 @@ collation_connection	utf8_general_ci
 Database Collation	utf8_general_ci
 SHOW CREATE FUNCTION test.fx;
 Function	fx
-sql_mode	
+sql_mode	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
 Create Function	CREATE DEFINER=`root`@`localhost` FUNCTION `fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
 BEGIN
 SET @param_coll = COLLATION(`str`);
@@ -93,7 +93,7 @@ collation_connection	utf8_general_ci
 Database Collation	utf8_general_ci
 SHOW CREATE TRIGGER test.tx;
 Trigger	tx
-sql_mode	
+sql_mode	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
 SQL Original Statement	CREATE DEFINER=`root`@`localhost` TRIGGER tx BEFORE INSERT ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
@@ -113,7 +113,7 @@ collation_connection	utf8_general_ci
 Database Collation	utf8_general_ci
 SHOW CREATE EVENT test.ex;
 Event	ex
-sql_mode	
+sql_mode	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
 time_zone	SYSTEM
 Create Event	CREATE DEFINER="root"@"localhost" EVENT "ex" ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE ENABLE DO SELECT 1
 character_set_client	latin1
@@ -137,7 +137,7 @@ include/rpl_provisioning_wait_to_stop.inc
 
 SHOW CREATE PROCEDURE test.px;
 Procedure	px
-sql_mode	
+sql_mode	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
 Create Procedure	CREATE DEFINER=`root`@`localhost` PROCEDURE `px`()
 BEGIN
 SELECT CHARSET('a');
@@ -157,7 +157,7 @@ collation_connection	utf8_general_ci
 Database Collation	utf8_general_ci
 SHOW CREATE FUNCTION test.fx;
 Function	fx
-sql_mode	
+sql_mode	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
 Create Function	CREATE DEFINER=`root`@`localhost` FUNCTION `fx`(`str` TEXT CHARACTER SET utf8 COLLATE utf8_bin) RETURNS text CHARSET latin1 COLLATE latin1_bin
 BEGIN
 SET @param_coll = COLLATION(`str`);
@@ -179,7 +179,7 @@ collation_connection	utf8_general_ci
 Database Collation	utf8_general_ci
 SHOW CREATE TRIGGER test.tx;
 Trigger	tx
-sql_mode	
+sql_mode	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
 SQL Original Statement	CREATE DEFINER=`root`@`localhost` TRIGGER tx BEFORE INSERT ON t1 FOR EACH ROW
 BEGIN
 SET NEW.a = NEW.a * 2;
@@ -205,7 +205,7 @@ CHARSET('a')
 utf8
 SHOW CREATE EVENT test.ex;
 Event	ex
-sql_mode	
+sql_mode	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
 time_zone	SYSTEM
 Create Event	CREATE DEFINER=`root`@`localhost` EVENT `ex` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO SELECT 1
 character_set_client	latin1

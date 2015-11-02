@@ -52,13 +52,13 @@ test2	CREATE DATABASE `test2` /*!40100 DEFAULT CHARACTER SET latin1 */
 SHOW CREATE TABLE test.test_1;
 Table	Create Table
 test_1	CREATE TABLE `test_1` (
-  `a` int(11) NOT NULL DEFAULT '0',
+  `a` int(11) NOT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 SHOW CREATE TABLE test.test_2;
 Table	Create Table
 test_2	CREATE TABLE `test_2` (
-  `a` int(11) NOT NULL DEFAULT '0',
+  `a` int(11) NOT NULL,
   `b` int(11) DEFAULT NULL,
   `c` int(11) DEFAULT NULL,
   PRIMARY KEY (`a`)
@@ -72,13 +72,13 @@ big_table	CREATE TABLE `big_table` (
 SHOW CREATE TABLE test2.test2_1;
 Table	Create Table
 test2_1	CREATE TABLE `test2_1` (
-  `a` int(11) NOT NULL DEFAULT '0',
+  `a` int(11) NOT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 SHOW CREATE TABLE test2.test2_2;
 Table	Create Table
 test2_2	CREATE TABLE `test2_2` (
-  `a` int(11) NOT NULL DEFAULT '0',
+  `a` int(11) NOT NULL,
   `b` int(11) DEFAULT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
@@ -87,7 +87,7 @@ View	Create View	character_set_client	collation_connection
 v_1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `test`.`v_1` AS select `test`.`test_1`.`a` AS `a` from `test`.`test_1`	latin1	latin1_swedish_ci
 SHOW CREATE PROCEDURE test.fill_big_table;
 Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
-fill_big_table		CREATE DEFINER=`root`@`localhost` PROCEDURE `fill_big_table`()
+fill_big_table	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `fill_big_table`()
 BEGIN
 DECLARE v1 INT DEFAULT 100;
 WHILE v1 > 0 DO
@@ -97,7 +97,7 @@ END WHILE;
 END	latin1	latin1_swedish_ci	latin1_swedish_ci
 SHOW CREATE EVENT test.ev;
 Event	sql_mode	time_zone	Create Event	character_set_client	collation_connection	Database Collation
-ev		SYSTEM	CREATE DEFINER=`root`@`localhost` EVENT `ev` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO UPDATE test.test_1 SET a= 0 WHERE 0	latin1	latin1_swedish_ci	latin1_swedish_ci
+ev	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	SYSTEM	CREATE DEFINER=`root`@`localhost` EVENT `ev` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO UPDATE test.test_1 SET a= 0 WHERE 0	latin1	latin1_swedish_ci	latin1_swedish_ci
 SELECT * FROM test.test_1 ORDER BY a;
 a
 1
@@ -228,7 +228,7 @@ a	b
 4	4
 SHOW CREATE TRIGGER test.trigger_1;
 Trigger	sql_mode	SQL Original Statement	character_set_client	collation_connection	Database Collation
-trigger_1		CREATE DEFINER=`root`@`localhost` TRIGGER test.trigger_1
+trigger_1	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` TRIGGER test.trigger_1
 AFTER UPDATE
 ON test_1 FOR EACH ROW
 BEGIN

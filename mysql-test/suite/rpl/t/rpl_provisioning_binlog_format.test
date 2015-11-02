@@ -18,7 +18,7 @@ SET GLOBAL debug_dbug="-d,provisioning_wait";
 
 # Expecting slave error
 --connection slave
---let $slave_sql_errno= 1983
+--let $slave_sql_errno= 1984
 --source include/wait_for_slave_sql_error.inc
 --source include/wait_for_slave_io_to_stop.inc
 

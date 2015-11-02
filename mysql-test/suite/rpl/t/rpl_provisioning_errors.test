@@ -8,7 +8,7 @@
 #
 --connection slave
 SET GLOBAL slave_run_triggers_for_rbr=YES;
---error 1980
+--error 1981
 LOAD DATA FROM MASTER;
 
 # Cleanup after test case
@@ -42,11 +42,11 @@ CREATE TABLE test.t1 (a int);
 INSERT INTO test.t1 VALUES (1), (2), (3), (4), (5);
 
 --connection slave
-call mtr.add_suppression("Slave I/O: Provisioning failed with error code 1979 and message: .Table does not contain primary key. while processing `test`.`t1`, Internal MariaDB error code: 1979");
+call mtr.add_suppression("Slave I/O: Provisioning failed with error code .* and message: .Table does not contain primary key. while processing `test`.`t1`, Internal MariaDB error code: ");
 --source include/load_data_from_master.inc
 
 --let $show_slave_io_error= 1
---let $slave_io_errno= 1979
+--let $slave_io_errno= 1980
 --source include/wait_for_slave_io_error.inc
 RESET SLAVE;
 
@@ -54,28 +54,6 @@ RESET SLAVE;
 --connection master
 DROP TABLE test.t1;
 --connection slave
-# Creation of database `test` depends purely on timing and it has nothing to do with this test case
---disable_warnings
-DROP DATABASE IF EXISTS test;
---enable_warnings
-
-#
-# Disconnect during provisioning
-#
---connection slave
-SET GLOBAL debug_dbug="+d,FORCE_SLAVE_TO_RECONNECT_DUMP";
-call mtr.add_suppression("Slave I/O: Slave disconnected during provisioning, drop already provisioned databases from slave and try again, Internal MariaDB error code: 1981");
-LOAD DATA FROM MASTER;
-
---let $show_slave_io_error= 1
---let $slave_io_errno= 1981
---source include/wait_for_slave_io_error.inc
---source include/stop_slave.inc
-RESET SLAVE;
-
-# Cleanup after test case
---connection slave
-SET GLOBAL debug_dbug="-d,FORCE_SLAVE_TO_RECONNECT_DUMP";
 # Creation of database `test` depends purely on timing and it has nothing to do with this test case
 --disable_warnings
 DROP DATABASE IF EXISTS test;
@@ -91,7 +69,7 @@ SET GLOBAL debug_dbug="+d,provisioning_wait";
 --source include/load_data_from_master.inc
 
 # START SLAVE fails with error
---error 1982
+--error 1983
 START SLAVE;
 
 # Wait for provisioning to end
@@ -126,7 +104,7 @@ CREATE TABLE test.t2 (a int, PRIMARY KEY (a));
 
 # Expecting slave error
 --connection slave
---let $slave_sql_errno= 1983
+--let $slave_sql_errno= 1984
 --source include/wait_for_slave_sql_error.inc
 
 # Let master finish too

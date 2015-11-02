@@ -499,7 +499,10 @@ bool provisioning_send_info::event_to_packet(Log_event &evt, String &packet)
   // Reset cache for writing
   reinit_io_cache(event_conversion_cache, WRITE_CACHE, 0, false, true);
 
-  if (evt.write(event_conversion_cache))
+  Log_event_writer writer(event_conversion_cache);
+  evt.writer = &writer;
+
+  if (evt.write())
   {
     error_text= "Failed to write event to conversion cache";
     return true;

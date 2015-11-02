@@ -1773,7 +1773,7 @@ Log_event* Log_event::read_log_event(const char* buf, uint event_len,
       ev = new Start_encryption_log_event(buf, event_len, fdle);
       break;
     case PROVISIONING_DONE_EVENT:
-      ev = new Provisioning_done_log_event(buf, description_event);
+      ev = new Provisioning_done_log_event(buf, fdle);
       break;
     default:
       /*

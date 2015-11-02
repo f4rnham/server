@@ -16,7 +16,7 @@ include/rpl_provisioning_wait_to_stop.inc
 SHOW CREATE TABLE test.`_@_*_$_'_ _\t_\x_"_``_`;
 Table	Create Table
 _@_*_$_'_ _\t_\x_"_`_	CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_` (
-  `_@_*_$_'_ _\t_\x_"_``_` int(11) NOT NULL DEFAULT '0',
+  `_@_*_$_'_ _\t_\x_"_``_` int(11) NOT NULL,
   PRIMARY KEY (`_@_*_$_'_ _\t_\x_"_``_`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 SHOW CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_`;
@@ -25,7 +25,7 @@ _@_*_$_'_ _\t_\x_"_`_	CREATE DATABASE `_@_*_$_'_ _\t_\x_"_``_` /*!40100 DEFAULT 
 SHOW CREATE TABLE `_@_*_$_'_ _\t_\x_"_``_`.`select`;
 Table	Create Table
 select	CREATE TABLE `select` (
-  `where` int(11) NOT NULL DEFAULT '0',
+  `where` int(11) NOT NULL,
   PRIMARY KEY (`where`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 SHOW CREATE DATABASE `select`;
@@ -33,7 +33,7 @@ Database	Create Database
 select	CREATE DATABASE `select` /*!40100 DEFAULT CHARACTER SET latin1 */
 SHOW CREATE EVENT test.`_@_*_$_'_ _\t_\x_"_``_`;
 Event	sql_mode	time_zone	Create Event	character_set_client	collation_connection	Database Collation
-_@_*_$_'_ _\t_\x_"_`_		SYSTEM	CREATE DEFINER=`root`@`localhost` EVENT `_@_*_$_'_ _\t_\x_"_``_` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO SELECT 1	latin1	latin1_swedish_ci	latin1_swedish_ci
+_@_*_$_'_ _\t_\x_"_`_	NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	SYSTEM	CREATE DEFINER=`root`@`localhost` EVENT `_@_*_$_'_ _\t_\x_"_``_` ON SCHEDULE EVERY 1024 YEAR STARTS '2038-01-19 03:14:07' ON COMPLETION NOT PRESERVE DISABLE ON SLAVE DO SELECT 1	latin1	latin1_swedish_ci	latin1_swedish_ci
 SELECT * FROM test.`_@_*_$_'_ _\t_\x_"_``_`;
 _@_*_$_'_ _\t_\x_"_`_
 1
