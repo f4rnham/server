@@ -17,12 +17,12 @@
 # 
 # With current number of events = 165,
 #
-#   binlog_start_pos = 4 + 19 + 58 + 165 + 1 + 4 = 251.
+#   binlog_start_pos = 4 + 19 + 57 + 165 + 1 + 4 = 250.
 #
 ##############################################################################
 
-let $binlog_start_pos=251;
+let $binlog_start_pos=250;
 --disable_query_log
-SET @binlog_start_pos=251;
+SET @binlog_start_pos=250;
 --enable_query_log
 
